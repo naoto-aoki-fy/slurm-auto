@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  RUST_TOOLCHAIN: 1.93.0
+  CROSS_VERSION: 0.2.5
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+      - name: Run existing tests without a Slurm cluster
+        run: cargo +"$RUST_TOOLCHAIN" test --locked
+
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-musl
+          - aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Install Rust and cross
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup default "$RUST_TOOLCHAIN"
+          cargo install cross --version "$CROSS_VERSION" --locked
+      - name: Build static release binary
+        env:
+          TARGET: ${{ matrix.target }}
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cross build --locked --release --target "$TARGET" --bin slurm-auto
+      - name: Package binary
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          mkdir -p dist
+          tar -czf "dist/slurm-auto-$TARGET.tar.gz" -C "target/$TARGET/release" slurm-auto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slurm-auto-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          overwrite: true
+
+  publish:
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    # Allocate versions only while holding this repository-wide publishing lock.
+    concurrency:
+      group: slurm-auto-release
+      cancel-in-progress: false
+      queue: max
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: slurm-auto-*
+          path: artifacts
+          merge-multiple: true
+      - name: Allocate version and publish both archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 .github/scripts/publish_release.py

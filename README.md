@@ -6,6 +6,18 @@ using named TOML templates. Only `submit` without `--dry-run` starts `sbatch`.
 
 ## Installation
 
+Automatic releases provide prebuilt static Linux binaries on the repository's
+[GitHub Releases page](https://github.com/naoto-aoki-fy/slurm-utility/releases).
+Choose the archive matching your machine:
+
+| Target | Release asset |
+| --- | --- |
+| x86-64 | `slurm-auto-vMAJOR.MINOR.PATCH-x86_64-unknown-linux-musl.tar.gz` |
+| ARM64 | `slurm-auto-vMAJOR.MINOR.PATCH-aarch64-unknown-linux-musl.tar.gz` |
+
+Each archive contains the executable `slurm-auto`. Extract it with
+`tar -xzf <archive>` and place the binary in a directory on your `PATH`.
+
 Install a current stable Rust toolchain, then run:
 
 ```sh
@@ -190,6 +202,38 @@ partition, member node names, and differing capacities.
 - Output is captured and forwarded after `sbatch` exits; `--wait` therefore delays
   output until the job completes. A process killed by a signal returns wrapper
   status 1; ordinary sbatch nonzero exit codes are preserved.
+
+## Automatic releases
+
+Every push to `main` triggers [.github/workflows/release.yml](.github/workflows/release.yml).
+The workflow checks out the exact triggering commit, runs the existing tests on
+Linux without a Slurm cluster, and uses a build matrix with `cross` 0.2.5 and
+Rust 1.93.0 to build both musl targets in release mode. `Cargo.lock` fixes the
+application dependency versions; builds use `--locked`. Neither a manually
+created tag nor a separate publishing step is required.
+
+Only after tests and both builds succeed does the publishing job download both
+archives and allocate a version. It fetches the full tag history and considers
+only exact `vMAJOR.MINOR.PATCH` tags containing non-negative integers. Versions
+are compared numerically, ignoring prereleases and other tag formats. The highest
+version's PATCH increases by one, keeping MAJOR and MINOR unchanged; without a
+matching tag the first release is `v0.1.0`. This release version is independent
+of the package version in `Cargo.toml`.
+
+Publishing jobs share a concurrency group with queued execution, so version
+allocation and publication happen sequentially. The built-in `GITHUB_TOKEN`
+has read access during builds and `contents: write` only in the publishing job.
+Repository rules must allow that token to create release tags. The tag points
+to the triggering commit, and the release includes automatically generated notes
+and both versioned archives listed above.
+
+A release remains a draft until both assets have been uploaded. A rerun reuses
+an existing version tag for the same commit, resumes a draft by uploading missing
+assets, or skips an already published release after checking both assets exist.
+Existing tags, releases, and uploaded assets are never overwritten. Interrupted
+publishing can leave a tag or draft; rerun the failed workflow to finish it. A
+published release with a missing or empty asset causes a rerun to fail rather
+than modify the release. Build or test failures create no tag or release.
 
 ## Development
 
