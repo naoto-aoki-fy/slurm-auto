@@ -1,0 +1,8 @@
+{
+  "partition": "gpu",
+  "sbatch_options": [
+    "-A", "hoge",
+    "-t", "24:00:00",
+    "--wrap", "sleep infinity"
+  ]
+}

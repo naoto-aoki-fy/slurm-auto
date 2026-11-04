@@ -1,1 +1,1 @@
-"""Slurm resource discovery, independent of job submission."""
+"""Slurm discovery, automatic resource selection, and wrapped job submission."""

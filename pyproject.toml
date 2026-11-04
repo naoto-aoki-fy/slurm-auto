@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "slurm-auto-sbatch"
 version = "0.1.0"
-description = "Inspect Slurm partition resources before job submission"
+description = "Discover Slurm partitions, select resources, and submit wrapped jobs"
 requires-python = ">=3.9"
 dependencies = []
 
