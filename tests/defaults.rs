@@ -33,7 +33,7 @@ impl Harness {
         Self(dir)
     }
     fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_slurm-auto"))
+        Command::new(env!("CARGO_BIN_EXE_sbatch-auto"))
             .args(args)
             .env("PATH", &self.0)
             .env("HOME", &self.0)
@@ -259,7 +259,7 @@ fn config_lookup_falls_back_to_home() {
         h.0.join(".config/slurm-auto/config.toml"),
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_slurm-auto"))
+    let output = Command::new(env!("CARGO_BIN_EXE_sbatch-auto"))
         .args(["submit", "--dry-run"])
         .env("PATH", &h.0)
         .env("HOME", &h.0)

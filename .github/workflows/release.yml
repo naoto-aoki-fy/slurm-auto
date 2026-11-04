@@ -46,17 +46,17 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           RUSTFLAGS: -C target-feature=+crt-static
-        run: cross build --locked --release --target "$TARGET" --bin slurm-auto
+        run: cross build --locked --release --target "$TARGET" --bin sbatch-auto
       - name: Prepare executable
         env:
           TARGET: ${{ matrix.target }}
         run: |
           mkdir -p dist
-          install -m 755 "target/$TARGET/release/slurm-auto" "dist/slurm-auto-$TARGET"
+          install -m 755 "target/$TARGET/release/sbatch-auto" "dist/sbatch-auto-$TARGET"
       - uses: actions/upload-artifact@v4
         with:
-          name: slurm-auto-${{ matrix.target }}
-          path: dist/slurm-auto-${{ matrix.target }}
+          name: sbatch-auto-${{ matrix.target }}
+          path: dist/sbatch-auto-${{ matrix.target }}
           compression-level: 0
           if-no-files-found: error
           overwrite: true
@@ -78,7 +78,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
-          pattern: slurm-auto-*
+          pattern: sbatch-auto-*
           path: artifacts
           merge-multiple: true
       - name: Allocate version and publish both executables

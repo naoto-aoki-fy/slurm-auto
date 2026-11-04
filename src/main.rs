@@ -9,6 +9,7 @@ use slurm_auto::{
 
 #[derive(Parser)]
 #[command(
+    name = "sbatch-auto",
     version,
     about = "Inspect Slurm capacity, plan allocations, and submit jobs"
 )]

@@ -1,4 +1,4 @@
-# slurm-auto
+# sbatch-auto
 
 A Rust CLI that inspects configured Slurm node capacity and generates proportional
 `sbatch` resource arguments. It supports inspection, planning, and submission
@@ -8,25 +8,27 @@ using TOML sbatch defaults. Only `submit` without `--dry-run` starts `sbatch`.
 
 Automatic releases provide prebuilt static Linux binaries on the repository's
 [GitHub Releases page](https://github.com/naoto-aoki-fy/slurm-utility/releases).
-Choose the executable matching your machine (initial release: `v0.0.1`):
+Choose the executable matching your machine:
 
 | Target | Release asset |
 | --- | --- |
-| x86-64 | `slurm-auto-vMAJOR.MINOR.PATCH-x86_64-unknown-linux-musl` |
-| ARM64 | `slurm-auto-vMAJOR.MINOR.PATCH-aarch64-unknown-linux-musl` |
+| x86-64 | `sbatch-auto-vMAJOR.MINOR.PATCH-x86_64-unknown-linux-musl` |
+| ARM64 | `sbatch-auto-vMAJOR.MINOR.PATCH-aarch64-unknown-linux-musl` |
 
 Assets are raw, uncompressed executables. Download the matching asset, rename it
-to `slurm-auto`, mark it executable, and place it in a directory on your `PATH`.
-For example, on x86-64 Linux:
+to `sbatch-auto`, mark it executable, and place it in a directory on your `PATH`.
+For example, on x86-64 Linux, set `release_tag` to the release version:
 
 ```sh
-curl -fL -o slurm-auto https://github.com/naoto-aoki-fy/slurm-utility/releases/download/v0.0.1/slurm-auto-v0.0.1-x86_64-unknown-linux-musl
-chmod +x slurm-auto
-./slurm-auto --version
+release_tag=vMAJOR.MINOR.PATCH
+curl -fL -o sbatch-auto "https://github.com/naoto-aoki-fy/slurm-utility/releases/download/${release_tag}/sbatch-auto-${release_tag}-x86_64-unknown-linux-musl"
+chmod +x sbatch-auto
+./sbatch-auto --version
 ```
 
 Raw downloads do not retain Unix executable permissions, so `chmod +x` is required.
-The initial package version in `Cargo.toml` is `0.0.1`.
+The Cargo package is named `slurm-auto`; its executable is `sbatch-auto`.
+Older releases may provide executables with the former `slurm-auto` name.
 
 Install a current stable Rust toolchain, then run:
 
@@ -42,13 +44,13 @@ the first build to obtain `clap`, `serde`, `serde_json`, and `toml`.
 ## Usage
 
 ```sh
-slurm-auto inspect
-slurm-auto plan -p gpu -N 2 -g 2
-slurm-auto plan --partition cpu --nodes 1 --cpus-per-node 16
-slurm-auto plan -p gpu  # All GPUs and effective CPUs on one node
-slurm-auto plan -p cpu  # All effective CPUs on one node
-slurm-auto plan -p gpu -g 2 --memory proportional  # Also request proportional memory
-slurm-auto plan --help
+sbatch-auto inspect
+sbatch-auto plan -p gpu -N 2 -g 2
+sbatch-auto plan --partition cpu --nodes 1 --cpus-per-node 16
+sbatch-auto plan -p gpu  # All GPUs and effective CPUs on one node
+sbatch-auto plan -p cpu  # All effective CPUs on one node
+sbatch-auto plan -p gpu -g 2 --memory proportional  # Also request proportional memory
+sbatch-auto plan --help
 ```
 
 `inspect` displays each partition's name, CPU/GPU type, configured node count,
@@ -131,11 +133,11 @@ Partition selection uses `-p`/`--partition` or `sbatch.defaults.partition`;
 `sbatch_args` cannot set partition options.
 
 ```sh
-slurm-auto submit -N 2 -g 2  # Uses the default partition
-slurm-auto submit -A other-account --wrap "hostname" --dry-run
-slurm-auto submit -p gpu -N 2 -g 2 --dry-run
-slurm-auto submit --config ./config.example.toml -p cpu -c 16 --dry-run
-slurm-auto submit -p cpu -c 16 -- ./job.sh 'one argument' --job-option
+sbatch-auto submit -N 2 -g 2  # Uses the default partition
+sbatch-auto submit -A other-account --wrap "hostname" --dry-run
+sbatch-auto submit -p gpu -N 2 -g 2 --dry-run
+sbatch-auto submit --config ./config.example.toml -p cpu -c 16 --dry-run
+sbatch-auto submit -p cpu -c 16 -- ./job.sh 'one argument' --job-option
 ```
 
 A submission requires exactly one workload: `--wrap` from the CLI, `sbatch_args`,

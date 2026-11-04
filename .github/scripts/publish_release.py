@@ -29,7 +29,7 @@ def require_assets(assets, expected):
 
 def main():
     # Check both inputs before creating any remote tag or draft release.
-    inputs = [Path("artifacts") / f"slurm-auto-{target}" for target in TARGETS]
+    inputs = [Path("artifacts") / f"sbatch-auto-{target}" for target in TARGETS]
     for binary in inputs:
         if not binary.is_file() or binary.stat().st_size == 0:
             raise RuntimeError(f"Required build artifact missing or empty: {binary}")
@@ -69,7 +69,7 @@ def main():
         (release for page in pages for release in page if release["tag_name"] == tag),
         None,
     )
-    expected = [f"slurm-auto-{tag}-{target}" for target in TARGETS]
+    expected = [f"sbatch-auto-{tag}-{target}" for target in TARGETS]
     if existing and not same_commit:
         raise RuntimeError(f"Release {tag} already exists; refusing to overwrite it")
     if existing and not existing["draft"]:

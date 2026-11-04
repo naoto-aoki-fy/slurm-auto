@@ -99,7 +99,7 @@ mod cli {
         }
 
         fn run(&self, args: &[&str]) -> Output {
-            Command::new(env!("CARGO_BIN_EXE_slurm-auto"))
+            Command::new(env!("CARGO_BIN_EXE_sbatch-auto"))
                 .args(args).env("PATH", &self.0)
                 .env("SLURM_AUTO_TEST_FIXTURE", concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/cluster.json"))
                 .output().unwrap()

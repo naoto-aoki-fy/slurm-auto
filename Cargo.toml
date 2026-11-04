@@ -5,6 +5,10 @@ edition = "2021"
 description = "Inspect Slurm capacity and generate resource-aware sbatch plans"
 license = "MIT"
 
+[[bin]]
+name = "sbatch-auto"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
