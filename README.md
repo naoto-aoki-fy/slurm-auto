@@ -55,7 +55,7 @@ effective CPUs per node, configured GPUs per node, and memory per node in MiB.
 
 | Option | Meaning | Default |
 | --- | --- | --- |
-| `-p`, `--partition` | Partition name | Required for `plan` and `submit` |
+| `-p`, `--partition` | Partition name | `sbatch.defaults.partition`, otherwise required |
 | `-N`, `--nodes` | Number of configured nodes to request | 1 |
 | `-g`, `--gpus-per-node` | GPUs per node in a GPU partition | All configured GPUs |
 | `-c`, `--cpus-per-node` | CPUs per node in a CPU partition | All effective CPUs |
@@ -89,29 +89,57 @@ Copy [config.example.toml](config.example.toml) to
 An absolute `$XDG_CONFIG_HOME` takes precedence over `~/.config`; `--config <path>`
 overrides the default location. Explicit paths are used literally (the shell can
 expand `~`); missing files, unknown fields, and missing templates are errors.
-`inspect` and `plan` do not load configuration.
+`inspect` does not load configuration. `plan` loads it only when `-p` is omitted,
+using the default partition; `plan --config <path>` selects a custom file.
+An explicit `plan -p ...` works without any configuration file. Planning remains
+a resource-only preview, ignoring workload and other submission defaults.
 
 ```toml
+[sbatch.defaults]
+account = "hoge"
+partition = "gpu"
+time = "24:00:00"
+wrap = "sleep infinity"
+job_name = "my-job"
+
 [templates.default]
-sbatch_args = ["-A", "hoge", "-t", "24:00:00", "--wrap", "sleep infinity"]
+sbatch_args = []
+
+[templates.short]
+sbatch_args = ["--time=01:00:00", "--job-name=short-job"]
 
 [templates.batch]
-sbatch_args = ["--account=hoge", "--time=01:00:00"]
+sbatch_args = ["--time=01:00:00"]
 ```
 
 Arguments are strings in an array: `sleep infinity` is one argument. Do not add
 shell quotes inside a value. Every template requires `sbatch_args` (which can be
-empty for a script template). The default template name is `default`.
+empty). The default template name is `default`. A configuration containing only
+global defaults needs no templates. An explicitly selected missing template is
+an error. Existing template-only configurations continue to work.
+
+All five defaults are optional strings and must be nonempty when present.
+Precedence is explicit CLI options, then the selected template, then global
+`[sbatch.defaults]` values. `submit` accepts `-A`/`--account`, `-t`/`--time`,
+`-J`/`--job-name`, and `--wrap` as overrides. Short and long template spellings,
+including attached values, are recognized; only the winning value is forwarded
+for each of these options. Repeated account/time/job-name options in a template
+use the last value; duplicate template wraps remain an error.
+Partition selection uses `-p`/`--partition` or `sbatch.defaults.partition`;
+templates still cannot set partition options.
 
 ```sh
-slurm-auto submit -p gpu -N 2 -g 2
+slurm-auto submit -N 2 -g 2  # Uses the default partition
+slurm-auto submit --template short -A other-account --wrap "hostname" --dry-run
 slurm-auto submit -p gpu -N 2 -g 2 --dry-run
 slurm-auto submit --config ./config.example.toml --template default -p cpu -c 16 --dry-run
 slurm-auto submit --template batch -p cpu -c 16 -- ./job.sh 'one argument' --job-option
 ```
 
-A submission requires exactly one workload: one template `--wrap` option, or a
-batch script and arguments following `--`. Script operands do not belong in
+A submission requires exactly one workload: `--wrap` from the CLI, template,
+or global defaults, or a batch script and arguments following `--`. A script
+replaces the global default wrap. A CLI or template wrap still conflicts with
+a script. A CLI wrap overrides a template wrap. Script operands do not belong in
 `sbatch_args`. The wrapper inserts an option terminator before the script so its
 arguments cannot be interpreted as submission options. Slurm handles script
 reading and execution. The wrapper never executes a shell; Slurm itself executes
@@ -120,7 +148,7 @@ reading and execution. The wrapper never executes a shell; Slurm itself executes
 For the GPU capacity example above, the default template resolves to:
 
 ```sh
-sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M -A hoge -t 24:00:00 --wrap 'sleep infinity'
+sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M --account=hoge --time=24:00:00 --job-name=my-job '--wrap=sleep infinity'
 ```
 
 Dry-run queries `scontrol`, loads and validates the selected template, calculates
@@ -263,5 +291,6 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-No formatting, builds, linting, tests, or runtime validation were run for Phase 2,
-as requested. New submission behavior remains unverified.
+Submission tests use fake `scontrol` and `sbatch` executables to verify defaults,
+CLI/template precedence, workload conflicts, literal argv forwarding, and dry-run
+rendering without a Slurm cluster.

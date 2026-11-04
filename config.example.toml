@@ -1,10 +1,17 @@
-[templates.default]
-sbatch_args = [
-    "-A", "hoge",
-    "-t", "24:00:00",
-    "--wrap", "sleep infinity",
-]
+# All defaults are optional. CLI options override templates, which override defaults.
+[sbatch.defaults]
+account = "hoge"
+partition = "gpu"
+time = "24:00:00"
+wrap = "sleep infinity"
+job_name = "my-job"
 
-# A template without --wrap requires a batch script after -- on the CLI.
+[templates.default]
+sbatch_args = []
+
+[templates.short]
+sbatch_args = ["--time=01:00:00", "--job-name=short-job"]
+
+# A script after -- replaces the global default wrap.
 [templates.batch]
-sbatch_args = ["--account=hoge", "--time=01:00:00"]
+sbatch_args = ["--time=01:00:00"]

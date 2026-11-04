@@ -127,7 +127,7 @@ pub fn parse_gres(text: &str) -> Result<u64> {
             let mut remainder = suffix;
             while !remainder.is_empty() {
                 if !remainder.starts_with('(') { return Err(invalid()); }
-                let end = remainder.find(')').ok_or_else(&invalid)?;
+                let end = remainder.find(')').ok_or_else(invalid)?;
                 remainder = remainder[end + 1..].trim();
             }
             entry[..index].trim()
@@ -145,7 +145,7 @@ pub fn parse_gres(text: &str) -> Result<u64> {
         let count = parts.last().unwrap();
         if !count.bytes().all(|byte| byte.is_ascii_digit()) { return Err(invalid()); }
         let count = count.parse::<u64>().map_err(|_| invalid())?;
-        total = total.checked_add(count).ok_or_else(&invalid)?;
+        total = total.checked_add(count).ok_or_else(invalid)?;
     }
     Ok(total)
 }
