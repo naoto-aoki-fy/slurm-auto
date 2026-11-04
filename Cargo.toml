@@ -1,0 +1,11 @@
+[package]
+name = "slurm-auto"
+version = "0.1.0"
+edition = "2021"
+description = "Inspect Slurm capacity and generate resource-aware sbatch plans"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

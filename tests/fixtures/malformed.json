@@ -1,0 +1,5 @@
+{
+  "nodes": [
+    {"name": "broken01", "partitions": ["gpu"], "cpus": 64, "gres": "gpu:a100:unknown", "real_memory": 262144}
+  ]
+}

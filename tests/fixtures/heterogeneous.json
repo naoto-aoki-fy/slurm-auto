@@ -1,0 +1,6 @@
+{
+  "nodes": [
+    {"name": "gpu01", "partitions": ["mixed"], "cpus": 64, "gres": "gpu:4", "real_memory": 262144},
+    {"name": "cpu01", "partitions": ["mixed"], "cpus": 32, "gres": "", "real_memory": 131072}
+  ]
+}

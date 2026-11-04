@@ -1,0 +1,42 @@
+{
+  "meta": {"Slurm": {"version": {"major": 24, "minor": 11}}},
+  "errors": [],
+  "nodes": [
+    {
+      "name": "gpu01",
+      "partitions": ["gpu", "shared"],
+      "cpus": 72,
+      "effective_cpus": 64,
+      "gres": "gpu:a100:4(S:0-3),mps:400(S:0-3)",
+      "real_memory": 262144,
+      "state": ["ALLOCATED"],
+      "gres_used": "gpu:a100:4(IDX:0-3)",
+      "alloc_cpus": 64,
+      "free_mem": 100
+    },
+    {
+      "name": "gpu02",
+      "partitions": "gpu,shared",
+      "cpus": 64,
+      "gres": "gpu:4(S:0,1,2,3)",
+      "real_memory": 262144,
+      "state": ["IDLE"]
+    },
+    {
+      "name": "cpu01",
+      "partitions": ["cpu"],
+      "cpus": 64,
+      "effective_cpus": {"set": true, "infinite": false, "number": 64},
+      "gres": "bandwidth:lustre:no_consume:4G",
+      "real_memory": {"set": true, "infinite": false, "number": 262144},
+      "state": ["MIXED"]
+    },
+    {
+      "name": "unassigned",
+      "partitions": [],
+      "cpus": 64,
+      "gres": null,
+      "real_memory": 262144
+    }
+  ]
+}
