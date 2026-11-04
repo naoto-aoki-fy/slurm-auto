@@ -21,8 +21,9 @@ _RESOURCE_OPTIONS = (
     "gpus-per-socket", "gres", "gres-flags", "cpus-per-task", "cpus-per-gpu",
     "partition", "nodefile", "nodelist", "exclude", "extra-node-info",
     "sockets-per-node", "cores-per-socket", "threads-per-core",
+    "core-spec", "thread-spec", "mincpus",
 )
-_RESOURCE_SHORT = set("NnGcpwxBF")
+_RESOURCE_SHORT = set("NnGcpwxBFS")
 # These flags have no separate operand; optional operands must use '='.
 _FLAGS = {
     "--help", "--usage", "--version", "--verbose", "--quiet", "--parsable",
@@ -32,10 +33,12 @@ _FLAGS = {
     "--ignore-pbs",
 }
 _SHORT_FLAGS = set("vQHOsW")
-_SHORT_VALUES = set("AabCdDeiJLmMoSt")
+_SHORT_VALUES = set("AabCdDeiJLmMot")
 
 
 def validate_template(options: Tuple[str, ...]) -> None:
+    if any(not isinstance(arg, str) or "\0" in arg for arg in options):
+        raise JobError("sbatch_options must contain strings without NUL characters")
     wrapped = False
     index = 0
     while index < len(options):

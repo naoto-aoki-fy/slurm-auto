@@ -6,6 +6,7 @@ from typing import Iterable
 from .aggregation import aggregate_partitions
 from .config import load_config, validate_template
 from .errors import DiscoveryError, JobError
+from .jobs import build_sbatch_command
 from .models import PartitionResources
 from .parsing import parse_nodes
 from .resources import calculate_resources
@@ -74,7 +75,7 @@ def main(argv=None) -> int:
         if selected is None:
             raise JobError(f"unknown partition {partition_name!r}; use --list-partitions to inspect configured partitions")
         resources = calculate_resources(selected, args.nodes, args.gpus_per_node, args.cpus_per_node)
-        command = ["sbatch", *resources.sbatch_options(), *config.sbatch_options]
+        command = build_sbatch_command(resources, config)
         if args.dry_run:
             print(format_partitions((selected,)))
             print(f"Request: {resources.nodes} node(s), {resources.ntasks_per_node} CPU tasks per node "

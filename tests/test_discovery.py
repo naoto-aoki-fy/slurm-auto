@@ -135,6 +135,9 @@ class CommandTests(unittest.TestCase):
             (PermissionError("denied"), "denied"),
             (subprocess.CalledProcessError(2, "scontrol", stderr="controller unavailable"),
              "exit 2.*controller unavailable"),
+            (subprocess.CalledProcessError(1, "scontrol", output="access denied"),
+             "exit 1.*access denied"),
+            (UnicodeError("invalid encoding"), "invalid encoding"),
         ]
         for failure, message in failures:
             with self.subTest(failure=failure):
@@ -165,7 +168,9 @@ class CommandTests(unittest.TestCase):
     @patch("slurm_auto_sbatch.cli.retrieve_node_json")
     def test_help_does_not_contact_slurm(self, retrieve):
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(main([]), 0)
+            with self.assertRaises(SystemExit) as result:
+                main(["--help"])
+        self.assertEqual(result.exception.code, 0)
         retrieve.assert_not_called()
 
 
