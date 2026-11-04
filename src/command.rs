@@ -7,7 +7,9 @@ pub fn sbatch_args(allocation: &Allocation) -> Vec<String> {
         args.push(format!("--gpus-per-node={gpus}"));
     }
     args.push(format!("--ntasks-per-node={}", allocation.tasks_per_node));
-    args.push(format!("--mem={}M", allocation.memory_mib_per_node));
+    if let Some(memory) = allocation.memory_mib_per_node {
+        args.push(format!("--mem={memory}M"));
+    }
     args
 }
 

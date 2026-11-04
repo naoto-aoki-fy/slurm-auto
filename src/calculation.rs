@@ -1,4 +1,4 @@
-use crate::model::{Allocation, Partitions, Request};
+use crate::model::{Allocation, MemoryMode, Partitions, Request};
 use crate::validation::validate_request;
 use crate::Result;
 
@@ -15,9 +15,10 @@ pub fn calculate(request: &Request, partitions: &Partitions) -> Result<Allocatio
         let cpus = request.cpus_per_node.unwrap_or(capacity.cpus);
         (None, cpus, proportion(capacity.memory_mib, cpus, capacity.cpus))
     };
-    if tasks_per_node == 0 || memory_mib_per_node == 0 {
+    if tasks_per_node == 0 || (request.memory == MemoryMode::Proportional && memory_mib_per_node == 0) {
         return Err(format!("allocation for partition {:?} produces zero tasks or zero memory (tasks={tasks_per_node}, memory={memory_mib_per_node} MiB)", partition.name));
     }
+    let memory_mib_per_node = (request.memory == MemoryMode::Proportional).then_some(memory_mib_per_node);
     Ok(Allocation { partition: partition.name.clone(), nodes: request.nodes, gpus_per_node, tasks_per_node, memory_mib_per_node })
 }
 
@@ -33,7 +34,7 @@ mod tests {
 
     fn setup(gpus: u64) -> (Partitions, Request) {
         let p = Partition { name: "p".into(), nodes: vec!["a".into(), "b".into()], capacity: Capacity { cpus: 64, gpus, memory_mib: 262144 } };
-        let request = Request { partition: "p".into(), nodes: 1, gpus_per_node: None, cpus_per_node: None };
+        let request = Request { partition: "p".into(), nodes: 1, gpus_per_node: None, cpus_per_node: None, memory: MemoryMode::Proportional };
         ([("p".into(), p)].into_iter().collect(), request)
     }
 
@@ -44,7 +45,7 @@ mod tests {
         request.gpus_per_node = Some(2);
         let allocation = calculate(&request, &partitions).unwrap();
         assert_eq!(allocation.tasks_per_node, 32);
-        assert_eq!(allocation.memory_mib_per_node, 131072);
+        assert_eq!(allocation.memory_mib_per_node, Some(131072));
         assert_eq!(allocation.gpus_per_node, Some(2));
     }
 
@@ -54,7 +55,7 @@ mod tests {
         request.cpus_per_node = Some(16);
         let allocation = calculate(&request, &partitions).unwrap();
         assert_eq!(allocation.tasks_per_node, 16);
-        assert_eq!(allocation.memory_mib_per_node, 65536);
+        assert_eq!(allocation.memory_mib_per_node, Some(65536));
         assert_eq!(allocation.gpus_per_node, None);
     }
 
@@ -64,7 +65,26 @@ mod tests {
             let (partitions, request) = setup(gpus);
             let allocation = calculate(&request, &partitions).unwrap();
             assert_eq!(allocation.tasks_per_node, 64);
-            assert_eq!(allocation.memory_mib_per_node, 262144);
+            assert_eq!(allocation.memory_mib_per_node, Some(262144));
+        }
+    }
+
+    #[test]
+    fn omitted_memory_does_not_reject_a_zero_proportional_memory_result() {
+        for gpus in [0, 4] {
+            let (mut partitions, mut request) = setup(gpus);
+            partitions.get_mut("p").unwrap().capacity.memory_mib = 1;
+            request.memory = MemoryMode::Omit;
+            if gpus == 0 {
+                request.cpus_per_node = Some(1);
+            } else {
+                request.gpus_per_node = Some(1);
+            }
+            let allocation = calculate(&request, &partitions).unwrap();
+            assert_eq!(allocation.memory_mib_per_node, None);
+            assert!(allocation.tasks_per_node > 0);
+            request.memory = MemoryMode::Proportional;
+            assert!(calculate(&request, &partitions).is_err());
         }
     }
 

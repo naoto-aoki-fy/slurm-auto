@@ -45,8 +45,9 @@ the first build to obtain `clap`, `serde`, `serde_json`, and `toml`.
 slurm-auto inspect
 slurm-auto plan -p gpu -N 2 -g 2
 slurm-auto plan --partition cpu --nodes 1 --cpus-per-node 16
-slurm-auto plan -p gpu  # All GPUs, effective CPUs, and memory on one node
-slurm-auto plan -p cpu  # All effective CPUs and memory on one node
+slurm-auto plan -p gpu  # All GPUs and effective CPUs on one node
+slurm-auto plan -p cpu  # All effective CPUs on one node
+slurm-auto plan -p gpu -g 2 --memory proportional  # Also request proportional memory
 slurm-auto plan --help
 ```
 
@@ -59,6 +60,7 @@ effective CPUs per node, configured GPUs per node, and memory per node in MiB.
 | `-N`, `--nodes` | Number of configured nodes to request | 1 |
 | `-g`, `--gpus-per-node` | GPUs per node in a GPU partition | All configured GPUs |
 | `-c`, `--cpus-per-node` | CPUs per node in a CPU partition | All effective CPUs |
+| `--memory` | `omit` (no `--mem`) or `proportional` (calculated MiB) | `sbatch.defaults.memory`, otherwise `omit` |
 
 **The wrapper's `-c` means CPUs per node. Slurm's `-c` means CPUs per task.**
 This tool assumes one CPU per task and generates `--ntasks-per-node`; it does
@@ -69,13 +71,13 @@ For 64 effective CPUs, 4 GPUs, and 262144 MiB per node, requesting two GPUs
 on each of two nodes prints an allocation and this resource-only preview:
 
 ```sh
-sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M
+sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32
 ```
 
 For a CPU node with 64 effective CPUs and 262144 MiB, requesting 16 CPUs prints:
 
 ```sh
-sbatch --partition=cpu --nodes=1 --ntasks-per-node=16 --mem=65536M
+sbatch --partition=cpu --nodes=1 --ntasks-per-node=16
 ```
 
 The preview uses POSIX shell escaping for each argument, including unusual
@@ -90,15 +92,17 @@ An absolute `$XDG_CONFIG_HOME` takes precedence over `~/.config`; `--config <pat
 overrides the default location. Explicit paths are used literally (the shell can
 expand `~`); missing files and unknown fields are errors.
 Obsolete `[templates.*]` sections are rejected; `--template` is unsupported.
-`inspect` does not load configuration. `plan` loads it only when `-p` is omitted,
-using the default partition; `plan --config <path>` selects a custom file.
-An explicit `plan -p ...` works without any configuration file. Planning remains
-a resource-only preview, ignoring workload and other submission defaults.
+`inspect` does not load configuration. `plan` loads configuration for partition
+and memory defaults; `plan --config <path>` selects a custom file and requires it
+to exist. An explicit `plan -p ...` works without an installed default configuration
+file; if one exists, it is loaded and validated. Planning remains a resource-only
+preview, ignoring workload and other submission defaults.
 
 ```toml
 [sbatch.defaults]
 account = "hoge"
 partition = "gpu"
+memory = "omit"
 time = "24:00:00"
 wrap = "sleep infinity"
 job_name = "my-job"
@@ -108,7 +112,11 @@ sbatch_args = ["--output=slurm-%j.out", "--qos=normal"]
 Arguments are strings in an array: `sleep infinity` is one argument. Do not add
 shell quotes inside a value. The optional `sbatch_args` array defaults to empty.
 
-All five dedicated defaults are optional strings and must be nonempty when present.
+The five dedicated string defaults are optional and must be nonempty when present.
+`memory` accepts `"omit"` (default) or `"proportional"`. Both `plan` and `submit`
+accept `--memory omit|proportional`, overriding the configuration. With `omit`,
+no memory size is passed to sbatch; Slurm applies its defaults. With `proportional`,
+the calculated memory is passed as `--mem=<MiB>M`.
 For account, time, job name, and wrap, precedence is explicit CLI options, then
 `sbatch.defaults.sbatch_args`, then the dedicated `[sbatch.defaults]` fields.
 `submit` accepts `-A`/`--account`, `-t`/`--time`, `-J`/`--job-name`, and `--wrap`
@@ -142,7 +150,7 @@ reading and execution. The wrapper never executes a shell; Slurm itself executes
 For the GPU capacity example above, the example configuration resolves to:
 
 ```sh
-sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M --account=hoge --time=24:00:00 --job-name=my-job '--wrap=sleep infinity' --output=slurm-%j.out --qos=normal
+sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --account=hoge --time=24:00:00 --job-name=my-job '--wrap=sleep infinity' --output=slurm-%j.out --qos=normal
 ```
 
 Dry-run queries `scontrol`, loads and validates the sbatch configuration, calculates
@@ -171,7 +179,7 @@ fixture switch or cluster connection is required for this approach.
 ## Calculation and discovery assumptions
 
 For effective CPUs `C`, configured GPUs `G`, configured memory `M` in MiB,
-and requested GPUs `g` on a GPU node:
+and requested GPUs `g` on a GPU node (memory applies only with `--memory proportional`):
 
 ```text
 tasks per node  = floor(C * g / G)
@@ -186,8 +194,9 @@ memory per node = floor(M * c / C)
 ```
 
 Calculations use widened integer arithmetic. Requests above per-node capacity,
-above configured partition node count, or producing zero tasks or zero memory
-are rejected. Omitting the applicable resource count requests the full node.
+above configured partition node count, or producing zero tasks are rejected.
+Zero calculated memory is rejected only in `proportional` mode. Omitting the
+applicable resource count requests all CPUs or GPUs on each node.
 
 Discovery reads `nodes`, node `name`, `partitions`, `effective_cpus` (also accepting
 `cpus_efctv`), `cpus`, `gres`, and `real_memory` from the Slurm JSON response.

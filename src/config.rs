@@ -21,6 +21,7 @@ pub struct Sbatch {
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Defaults {
+    pub memory: Option<crate::model::MemoryMode>,
     pub account: Option<String>,
     pub partition: Option<String>,
     pub time: Option<String>,

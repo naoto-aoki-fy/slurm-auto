@@ -79,7 +79,7 @@ fn loads_defaults_and_renders_shell_escaped_dry_run() {
     let h = Harness::new(DEFAULTS);
     let text = h.success(&["submit", "--dry-run", "-g", "2"]);
     assert!(text.contains(
-        "--partition=gpu --nodes=1 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M"
+        "--partition=gpu --nodes=1 --gpus-per-node=2 --ntasks-per-node=32"
     ));
     assert!(text.contains("--account=global-account --time=24:00:00 --job-name=global-job '--wrap=echo '\"'\"'hello'\"'\"'; $(exit 99)'"), "{text}");
 }
@@ -93,7 +93,7 @@ fn cli_overrides_all_defaults_and_argument_aliases_without_duplicates() {
         let h = Harness::new(&format!("{DEFAULTS}\n{arguments}"));
         let text = h.success(&["submit", "-p", "cpu", "-A", "cli", "-t", "02:00:00", "-J", "cli", "--wrap", "cli", "--dry-run"]);
         let command = text.lines().last().unwrap();
-        assert_eq!(command, "sbatch --partition=cpu --nodes=1 --ntasks-per-node=64 --mem=262144M --account=cli --time=02:00:00 --job-name=cli --wrap=cli");
+        assert_eq!(command, "sbatch --partition=cpu --nodes=1 --ntasks-per-node=64 --account=cli --time=02:00:00 --job-name=cli --wrap=cli");
         let text = h.success(&["submit", "--partition", "cpu", "--account", "long", "--time", "03:00:00", "--job-name", "long", "--wrap", "long", "--dry-run"]);
         assert!(text.contains("--account=long --time=03:00:00 --job-name=long --wrap=long"));
         let text = h.success(&["submit", "--dry-run"]);
@@ -158,6 +158,8 @@ fn missing_defaults_and_invalid_configuration() {
         "[sbatch.defaults]\naccount = 2",
         "[sbatch.defaults]\nunknown = 'x'",
         "[sbatch.defaults]\nwrap = ''",
+        "[sbatch.defaults]\nmemory = 'invalid'",
+        "[sbatch.defaults]\nmemory = true",
         "[sbatch.defaults]\nsbatch_args = '--hold'",
         "[sbatch.defaults]\nsbatch_args = [2]",
     ] {
@@ -201,7 +203,7 @@ fn arguments_cannot_override_managed_resources_or_hide_invalid_options() {
 }
 
 #[test]
-fn plan_uses_only_partition_and_explicit_partition_needs_no_config() {
+fn plan_uses_resource_defaults_and_explicit_partition_needs_no_config() {
     let h = Harness::new(DEFAULTS);
     let text = h.success(&["plan"]);
     assert!(text.contains("sbatch --partition=gpu"));
@@ -222,7 +224,8 @@ fn plan_uses_only_partition_and_explicit_partition_needs_no_config() {
         ])
         .contains("--partition=cpu"));
     fs::remove_file(h.0.join("slurm-auto/config.toml")).unwrap();
-    h.success(&["plan", "-p", "cpu", "--config", "does-not-exist"]);
+    h.success(&["plan", "-p", "cpu"]);
+    h.failure(&["plan", "-p", "cpu", "--config", "does-not-exist"], "cannot read");
     h.failure(&["plan"], "cannot read");
 }
 
@@ -368,5 +371,60 @@ fn inspection_and_planning_do_not_apply_submission_argument_policy() {
     assert!(!text.contains("--wrap") && !text.contains("--nodes=99"));
     let h = Harness::new("[templates.default]\nsbatch_args = []");
     h.success(&["inspect"]);
-    h.success(&["plan", "-p", "cpu"]);
+    h.failure(&["plan", "-p", "cpu"], "unknown field `templates`");
+}
+
+#[test]
+fn memory_policy_defaults_config_and_cli_apply_to_plans_and_submissions() {
+    for configured in [None, Some("omit"), Some("proportional")] {
+        let source = match configured {
+            Some(mode) => format!("{DEFAULTS}\nmemory = '{mode}'"),
+            None => DEFAULTS.to_owned(),
+        };
+        let h = Harness::new(&source);
+        for cli_mode in [None, Some("omit"), Some("proportional")] {
+            let proportional = cli_mode.or(configured) == Some("proportional");
+            for (partition, count_flag, count, memory) in [
+                ("cpu", "-c", "16", "--mem=65536M"),
+                ("gpu", "-g", "2", "--mem=131072M"),
+            ] {
+                for action in ["plan", "dry-run", "submit"] {
+                    let mut args = vec![
+                        if action == "dry-run" { "submit" } else { action },
+                        "-p",
+                        partition,
+                        count_flag,
+                        count,
+                    ];
+                    if action == "dry-run" {
+                        args.push("--dry-run");
+                    }
+                    if let Some(mode) = cli_mode {
+                        args.extend(["--memory", mode]);
+                    }
+                    let text = h.success(&args);
+                    assert_eq!(text.contains(memory), proportional, "{args:?}: {text}");
+                    assert_eq!(text.contains("--mem="), proportional, "{args:?}: {text}");
+                    assert_eq!(text.contains("unspecified (Slurm default)"), !proportional);
+                }
+            }
+        }
+        // Configuration also applies when it supplies the partition, or an explicit path is used.
+        let path = h.0.join("slurm-auto/config.toml");
+        for args in [
+            vec!["plan", "-g", "2"],
+            vec![
+                "plan", "-p", "gpu", "-g", "2", "--config", path.to_str().unwrap(),
+            ],
+        ] {
+            let text = h.success(&args);
+            assert_eq!(
+                text.contains("--mem=131072M"),
+                configured == Some("proportional")
+            );
+        }
+        for action in ["plan", "submit"] {
+            h.failure(&[action, "--memory", "invalid"], "invalid value");
+        }
+    }
 }

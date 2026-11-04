@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use slurm_auto::{
     calculation, command, config, discovery,
-    model::{Allocation, Request},
+    model::{Allocation, MemoryMode, Request},
     submission,
 };
 
@@ -32,6 +32,9 @@ enum Action {
         /// CPUs per node for CPU partitions (one CPU per task).
         #[arg(short = 'c', long, value_parser = clap::value_parser!(u64).range(1..))]
         cpus_per_node: Option<u64>,
+        /// Memory request policy (default: omit; overrides configuration).
+        #[arg(long, value_enum)]
+        memory: Option<MemoryMode>,
         #[arg(long)]
         config: Option<PathBuf>,
         #[arg(short = 'A', long)]
@@ -57,12 +60,15 @@ enum Action {
         nodes: u64,
         #[arg(short = 'g', long, value_parser = clap::value_parser!(u64).range(1..), conflicts_with = "cpus_per_node")]
         gpus_per_node: Option<u64>,
-        /// Configuration path, used for the default partition when -p is omitted.
+        /// Configuration path for partition and memory defaults.
         #[arg(long)]
         config: Option<PathBuf>,
         /// CPUs per node for CPU partitions (wrapper option; NOT Slurm --cpus-per-task).
         #[arg(short = 'c', long, value_parser = clap::value_parser!(u64).range(1..))]
         cpus_per_node: Option<u64>,
+        /// Memory request policy (default: omit; overrides configuration).
+        #[arg(long, value_enum)]
+        memory: Option<MemoryMode>,
     },
 }
 
@@ -95,12 +101,15 @@ impl std::fmt::Display for Error {
 
 fn print_allocation(allocation: &Allocation) {
     println!(
-        "Partition: {}\nNodes: {}\nTasks per node (one CPU per task): {}\nMemory per node: {} MiB",
+        "Partition: {}\nNodes: {}\nTasks per node (one CPU per task): {}",
         allocation.partition,
         allocation.nodes,
-        allocation.tasks_per_node,
-        allocation.memory_mib_per_node
+        allocation.tasks_per_node
     );
+    match allocation.memory_mib_per_node {
+        Some(memory) => println!("Memory per node: {memory} MiB"),
+        None => println!("Memory per node: unspecified (Slurm default)"),
+    }
     if let Some(gpus) = allocation.gpus_per_node {
         println!("GPUs per node: {gpus}");
     }
@@ -154,6 +163,7 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
             nodes,
             gpus_per_node,
             cpus_per_node,
+            memory,
             config: path,
             account,
             time,
@@ -188,6 +198,7 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
                     nodes,
                     gpus_per_node,
                     cpus_per_node,
+                    memory: memory.or(config.sbatch.defaults.memory).unwrap_or_default(),
                 },
                 &partitions,
             )?;
@@ -204,17 +215,29 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
             nodes,
             gpus_per_node,
             cpus_per_node,
+            memory,
             config: path,
         } => {
-            let partition = if let Some(partition) = partition {
-                select_partition(Some(partition), &config::Defaults::default())?
-            } else {
-                let path = match path {
-                    Some(path) => path,
-                    None => config::default_path()?,
-                };
-                select_partition(None, &config::load_config(&path)?.sbatch.defaults)?
+            let defaults = match path {
+                Some(path) => config::load_config(&path)?.sbatch.defaults,
+                None => {
+                    let path = config::default_path()?;
+                    // Explicit partition planning still works without an installed config.
+                    if partition.is_some()
+                        && !path.try_exists().map_err(|error| {
+                            submission::Error::Config(format!(
+                                "cannot access {}: {error}",
+                                path.display()
+                            ))
+                        })?
+                    {
+                        config::Defaults::default()
+                    } else {
+                        config::load_config(&path)?.sbatch.defaults
+                    }
+                }
             };
+            let partition = select_partition(partition, &defaults)?;
             let partitions = discovery::discover()?;
             let allocation = calculation::calculate(
                 &Request {
@@ -222,6 +245,7 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
                     nodes,
                     gpus_per_node,
                     cpus_per_node,
+                    memory: memory.or(defaults.memory).unwrap_or_default(),
                 },
                 &partitions,
             )?;

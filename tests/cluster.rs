@@ -1,5 +1,5 @@
 use serde_json::{json, Value};
-use slurm_auto::{calculation::calculate, command::{preview, sbatch_args}, discovery::parse_cluster, model::Request};
+use slurm_auto::{calculation::calculate, command::{preview, sbatch_args}, discovery::parse_cluster, model::{MemoryMode, Request}};
 
 const CLUSTER: &str = include_str!("fixtures/cluster.json");
 
@@ -8,7 +8,7 @@ fn fixture_gpu_acceptance_plan_uses_configured_capacity_even_when_busy() {
     let partitions = parse_cluster(CLUSTER).unwrap();
     assert_eq!(partitions["gpu"].nodes.len(), 2);
     assert_eq!(partitions["shared"].nodes.len(), 2);
-    let allocation = calculate(&Request { partition: "gpu".into(), nodes: 2, gpus_per_node: Some(2), cpus_per_node: None }, &partitions).unwrap();
+    let allocation = calculate(&Request { partition: "gpu".into(), nodes: 2, gpus_per_node: Some(2), cpus_per_node: None, memory: MemoryMode::Proportional }, &partitions).unwrap();
     assert_eq!(sbatch_args(&allocation), vec!["--partition=gpu", "--nodes=2", "--gpus-per-node=2", "--ntasks-per-node=32", "--mem=131072M"]);
     assert_eq!(preview(&allocation), "sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M");
 }
@@ -16,7 +16,7 @@ fn fixture_gpu_acceptance_plan_uses_configured_capacity_even_when_busy() {
 #[test]
 fn fixture_cpu_acceptance_plan() {
     let partitions = parse_cluster(CLUSTER).unwrap();
-    let allocation = calculate(&Request { partition: "cpu".into(), nodes: 1, gpus_per_node: None, cpus_per_node: Some(16) }, &partitions).unwrap();
+    let allocation = calculate(&Request { partition: "cpu".into(), nodes: 1, gpus_per_node: None, cpus_per_node: Some(16), memory: MemoryMode::Proportional }, &partitions).unwrap();
     assert_eq!(sbatch_args(&allocation), vec!["--partition=cpu", "--nodes=1", "--ntasks-per-node=16", "--mem=65536M"]);
     assert_eq!(preview(&allocation), "sbatch --partition=cpu --nodes=1 --ntasks-per-node=16 --mem=65536M");
 }
@@ -124,11 +124,11 @@ mod cli {
             if args[0] == "inspect" {
                 for expected in ["PARTITION", "gpu", "cpu", "shared", "262144"] { assert!(text.contains(expected)); }
             } else if args.contains(&"16") {
-                assert!(text.contains("sbatch --partition=cpu --nodes=1 --ntasks-per-node=16 --mem=65536M"));
+                assert!(text.contains("sbatch --partition=cpu --nodes=1 --ntasks-per-node=16"));
             } else if args.contains(&"-g") {
-                assert!(text.contains("sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M"));
+                assert!(text.contains("sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32"));
             } else {
-                assert!(text.contains("--nodes=1 --gpus-per-node=4 --ntasks-per-node=64 --mem=262144M"));
+                assert!(text.contains("--nodes=1 --gpus-per-node=4 --ntasks-per-node=64"));
             }
         }
     }

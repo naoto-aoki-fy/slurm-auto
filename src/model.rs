@@ -29,12 +29,23 @@ pub struct Partition {
 
 pub type Partitions = BTreeMap<String, Partition>;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryMode {
+    /// Leave memory allocation to Slurm defaults (omit --mem).
+    #[default]
+    Omit,
+    /// Request memory in proportion to the selected CPUs or GPUs.
+    Proportional,
+}
+
 #[derive(Clone, Debug)]
 pub struct Request {
     pub partition: String,
     pub nodes: u64,
     pub gpus_per_node: Option<u64>,
     pub cpus_per_node: Option<u64>,
+    pub memory: MemoryMode,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,5 +54,5 @@ pub struct Allocation {
     pub nodes: u64,
     pub gpus_per_node: Option<u64>,
     pub tasks_per_node: u64,
-    pub memory_mib_per_node: u64,
+    pub memory_mib_per_node: Option<u64>,
 }

@@ -3,6 +3,8 @@
 [sbatch.defaults]
 account = "hoge"
 partition = "gpu"
+# Omit --mem by default; use "proportional" to request calculated memory.
+memory = "omit"
 time = "24:00:00"
 wrap = "sleep infinity"
 job_name = "my-job"
