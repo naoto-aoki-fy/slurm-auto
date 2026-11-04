@@ -1,0 +1,10 @@
+[templates.default]
+sbatch_args = [
+    "-A", "hoge",
+    "-t", "24:00:00",
+    "--wrap", "sleep infinity",
+]
+
+# A template without --wrap requires a batch script after -- on the CLI.
+[templates.batch]
+sbatch_args = ["--account=hoge", "--time=01:00:00"]

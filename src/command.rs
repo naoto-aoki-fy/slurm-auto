@@ -12,7 +12,11 @@ pub fn sbatch_args(allocation: &Allocation) -> Vec<String> {
 }
 
 pub fn preview(allocation: &Allocation) -> String {
-    std::iter::once("sbatch".to_owned()).chain(sbatch_args(allocation))
+    render(&sbatch_args(allocation))
+}
+
+pub fn render(args: &[String]) -> String {
+    std::iter::once("sbatch".to_owned()).chain(args.iter().cloned())
         .map(|argument| shell_quote(&argument)).collect::<Vec<_>>().join(" ")
 }
 
