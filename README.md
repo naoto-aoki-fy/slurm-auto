@@ -8,15 +8,25 @@ using named TOML templates. Only `submit` without `--dry-run` starts `sbatch`.
 
 Automatic releases provide prebuilt static Linux binaries on the repository's
 [GitHub Releases page](https://github.com/naoto-aoki-fy/slurm-utility/releases).
-Choose the archive matching your machine:
+Choose the executable matching your machine (initial release: `v0.0.1`):
 
 | Target | Release asset |
 | --- | --- |
-| x86-64 | `slurm-auto-vMAJOR.MINOR.PATCH-x86_64-unknown-linux-musl.tar.gz` |
-| ARM64 | `slurm-auto-vMAJOR.MINOR.PATCH-aarch64-unknown-linux-musl.tar.gz` |
+| x86-64 | `slurm-auto-vMAJOR.MINOR.PATCH-x86_64-unknown-linux-musl` |
+| ARM64 | `slurm-auto-vMAJOR.MINOR.PATCH-aarch64-unknown-linux-musl` |
 
-Each archive contains the executable `slurm-auto`. Extract it with
-`tar -xzf <archive>` and place the binary in a directory on your `PATH`.
+Assets are raw, uncompressed executables. Download the matching asset, rename it
+to `slurm-auto`, mark it executable, and place it in a directory on your `PATH`.
+For example, on x86-64 Linux:
+
+```sh
+curl -fL -o slurm-auto https://github.com/naoto-aoki-fy/slurm-utility/releases/download/v0.0.1/slurm-auto-v0.0.1-x86_64-unknown-linux-musl
+chmod +x slurm-auto
+./slurm-auto --version
+```
+
+Raw downloads do not retain Unix executable permissions, so `chmod +x` is required.
+The initial package version in `Cargo.toml` is `0.0.1`.
 
 Install a current stable Rust toolchain, then run:
 
@@ -213,11 +223,11 @@ application dependency versions; builds use `--locked`. Neither a manually
 created tag nor a separate publishing step is required.
 
 Only after tests and both builds succeed does the publishing job download both
-archives and allocate a version. It fetches the full tag history and considers
+executables and allocate a version. It fetches the full tag history and considers
 only exact `vMAJOR.MINOR.PATCH` tags containing non-negative integers. Versions
 are compared numerically, ignoring prereleases and other tag formats. The highest
 version's PATCH increases by one, keeping MAJOR and MINOR unchanged; without a
-matching tag the first release is `v0.1.0`. This release version is independent
+matching tag the first release is `v0.0.1`. This release version is independent
 of the package version in `Cargo.toml`.
 
 Publishing jobs share a concurrency group with queued execution, so version
@@ -225,7 +235,7 @@ allocation and publication happen sequentially. The built-in `GITHUB_TOKEN`
 has read access during builds and `contents: write` only in the publishing job.
 Repository rules must allow that token to create release tags. The tag points
 to the triggering commit, and the release includes automatically generated notes
-and both versioned archives listed above.
+and both versioned raw executables listed above.
 
 A release remains a draft until both assets have been uploaded. A rerun reuses
 an existing version tag for the same commit, resumes a draft by uploading missing

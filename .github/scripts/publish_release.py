@@ -1,4 +1,4 @@
-"""Publish downloaded musl archives; called under the release job's concurrency lock."""
+"""Publish downloaded musl executables; called under the release job's concurrency lock."""
 
 import json
 import os
@@ -29,10 +29,10 @@ def require_assets(assets, expected):
 
 def main():
     # Check both inputs before creating any remote tag or draft release.
-    inputs = [Path("artifacts") / f"slurm-auto-{target}.tar.gz" for target in TARGETS]
-    for archive in inputs:
-        if not archive.is_file() or archive.stat().st_size == 0:
-            raise RuntimeError(f"Required build artifact missing or empty: {archive}")
+    inputs = [Path("artifacts") / f"slurm-auto-{target}" for target in TARGETS]
+    for binary in inputs:
+        if not binary.is_file() or binary.stat().st_size == 0:
+            raise RuntimeError(f"Required build artifact missing or empty: {binary}")
 
     commit = os.environ["GITHUB_SHA"]
     if run("git", "rev-parse", "HEAD") != commit:
@@ -57,7 +57,7 @@ def main():
         tag = max(same_commit)[1]
     else:
         highest = max(versions)[0] if versions else None
-        next_version = (highest[0], highest[1], highest[2] + 1) if highest else (0, 1, 0)
+        next_version = (highest[0], highest[1], highest[2] + 1) if highest else (0, 0, 1)
         tag = "v" + ".".join(str(part) for part in next_version)
 
     # Listing releases avoids treating API/network failures as an absent release.
@@ -69,7 +69,7 @@ def main():
         (release for page in pages for release in page if release["tag_name"] == tag),
         None,
     )
-    expected = [f"slurm-auto-{tag}-{target}.tar.gz" for target in TARGETS]
+    expected = [f"slurm-auto-{tag}-{target}" for target in TARGETS]
     if existing and not same_commit:
         raise RuntimeError(f"Release {tag} already exists; refusing to overwrite it")
     if existing and not existing["draft"]:
@@ -79,11 +79,12 @@ def main():
         return
 
     Path("dist").mkdir(exist_ok=True)
-    archives = []
+    binaries = []
     for source, name in zip(inputs, expected):
         destination = Path("dist") / name
         shutil.copyfile(source, destination)
-        archives.append(destination)
+        destination.chmod(0o755)
+        binaries.append(destination)
 
     if not same_commit:
         # No force: a competing external tag creator causes failure, never replacement.
@@ -97,12 +98,12 @@ def main():
     # Interrupted uploads can be resumed. Never clobber an existing asset.
     info = release_info(tag)
     uploaded = {asset["name"]: asset for asset in info["assets"]}
-    for archive in archives:
-        if archive.name in uploaded:
-            if uploaded[archive.name]["size"] <= 0:
-                raise RuntimeError(f"Existing asset is empty: {archive.name}")
+    for binary in binaries:
+        if binary.name in uploaded:
+            if uploaded[binary.name]["size"] <= 0:
+                raise RuntimeError(f"Existing asset is empty: {binary.name}")
         else:
-            run("gh", "release", "upload", tag, str(archive))
+            run("gh", "release", "upload", tag, str(binary))
 
     info = release_info(tag)
     require_assets(info["assets"], expected)

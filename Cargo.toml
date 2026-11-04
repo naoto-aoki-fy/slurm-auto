@@ -1,6 +1,6 @@
 [package]
 name = "slurm-auto"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2021"
 description = "Inspect Slurm capacity and generate resource-aware sbatch plans"
 license = "MIT"
