@@ -1,0 +1,9 @@
+{
+  "nodes": [
+    {"name": "cpu01", "partitions": ["cpu", "mixed"], "effective_cpus": 60, "cpus": 64, "gres": "(null)"},
+    {"name": "cpu02", "partitions": "cpu", "effective_cpus": 60, "cpus": 64, "gres": null},
+    {"name": "gpu01", "partitions": "gpu,mixed", "effective_cpus": 64, "cpus": 128, "gres": "gpu:a100:4(S:0-1),nic:1"},
+    {"name": "gpu02", "partitions": ["gpu"], "cpus": 64, "gres": "gpu:a100:2,gpu:h100:2,mps:100,shard:8"},
+    {"name": "idle01", "partitions": [], "cpus": 32, "gres": ""}
+  ]
+}
