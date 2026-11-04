@@ -1,17 +1,12 @@
-# All defaults are optional. CLI options override templates, which override defaults.
+# All fields are optional. CLI options override sbatch_args, which override
+# the dedicated account, time, job_name, and wrap fields below.
 [sbatch.defaults]
 account = "hoge"
 partition = "gpu"
 time = "24:00:00"
 wrap = "sleep infinity"
 job_name = "my-job"
+sbatch_args = ["--output=slurm-%j.out", "--qos=normal"]
 
-[templates.default]
-sbatch_args = []
-
-[templates.short]
-sbatch_args = ["--time=01:00:00", "--job-name=short-job"]
-
-# A script after -- replaces the global default wrap.
-[templates.batch]
-sbatch_args = ["--time=01:00:00"]
+# A script after -- replaces the dedicated default wrap.
+# A --wrap option in sbatch_args or on the CLI conflicts with a script.

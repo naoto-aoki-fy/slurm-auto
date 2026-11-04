@@ -10,7 +10,7 @@ use slurm_auto::{
 #[derive(Parser)]
 #[command(
     version,
-    about = "Inspect Slurm capacity, plan allocations, and submit templated jobs"
+    about = "Inspect Slurm capacity, plan allocations, and submit jobs"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -21,7 +21,7 @@ struct Cli {
 enum Action {
     /// Show homogeneous configured partition capacities, including busy nodes.
     Inspect,
-    /// Submit calculated resources with a named sbatch template.
+    /// Submit calculated resources with configured sbatch defaults.
     Submit {
         #[arg(short = 'p', long)]
         partition: Option<String>,
@@ -34,8 +34,6 @@ enum Action {
         cpus_per_node: Option<u64>,
         #[arg(long)]
         config: Option<PathBuf>,
-        #[arg(long)]
-        template: Option<String>,
         #[arg(short = 'A', long)]
         account: Option<String>,
         #[arg(short = 't', long)]
@@ -47,7 +45,7 @@ enum Action {
         /// Calculate and display the command without executing sbatch.
         #[arg(long)]
         dry_run: bool,
-        /// Batch script and its arguments, following --; conflicts with CLI/template --wrap.
+        /// Batch script and its arguments, following --; conflicts with CLI/sbatch_args --wrap.
         #[arg(last = true)]
         script: Vec<String>,
     },
@@ -157,7 +155,6 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
             gpus_per_node,
             cpus_per_node,
             config: path,
-            template,
             account,
             time,
             job_name,
@@ -171,7 +168,6 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
             };
             let config = config::load_config(&path)?;
             let partition = select_partition(partition, &config.sbatch.defaults)?;
-            let template = config.template(template.as_deref())?;
             let overrides = config::Defaults {
                 account,
                 time,
@@ -180,9 +176,8 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
                 ..Default::default()
             };
             overrides.validate()?;
-            let template = submission::resolve(
+            let options = submission::resolve(
                 &config.sbatch.defaults,
-                &template,
                 &overrides.arguments(false),
                 !script.is_empty(),
             )?;
@@ -196,7 +191,7 @@ fn run(cli: Cli) -> std::result::Result<(), Error> {
                 },
                 &partitions,
             )?;
-            let args = submission::merge(&allocation, &template, &script)?;
+            let args = submission::merge(&allocation, &options, &script)?;
             print_allocation(&allocation);
             if dry_run {
                 println!("\nDry run (no job submitted):\n{}", command::render(&args));

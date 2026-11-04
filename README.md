@@ -2,7 +2,7 @@
 
 A Rust CLI that inspects configured Slurm node capacity and generates proportional
 `sbatch` resource arguments. It supports inspection, planning, and submission
-using named TOML templates. Only `submit` without `--dry-run` starts `sbatch`.
+using TOML sbatch defaults. Only `submit` without `--dry-run` starts `sbatch`.
 
 ## Installation
 
@@ -82,13 +82,14 @@ The preview uses POSIX shell escaping for each argument, including unusual
 partition names. It contains no script or payload: add a job script yourself
 when using the arguments outside this tool. No `sbatch` process is started.
 
-## Submission templates
+## Submission configuration
 
 Copy [config.example.toml](config.example.toml) to
 `~/.config/slurm-auto/config.toml` and replace the account with your cluster account.
 An absolute `$XDG_CONFIG_HOME` takes precedence over `~/.config`; `--config <path>`
 overrides the default location. Explicit paths are used literally (the shell can
-expand `~`); missing files, unknown fields, and missing templates are errors.
+expand `~`); missing files and unknown fields are errors.
+Obsolete `[templates.*]` sections are rejected; `--template` is unsupported.
 `inspect` does not load configuration. `plan` loads it only when `-p` is omitted,
 using the default partition; `plan --config <path>` selects a custom file.
 An explicit `plan -p ...` works without any configuration file. Planning remains
@@ -101,63 +102,54 @@ partition = "gpu"
 time = "24:00:00"
 wrap = "sleep infinity"
 job_name = "my-job"
-
-[templates.default]
-sbatch_args = []
-
-[templates.short]
-sbatch_args = ["--time=01:00:00", "--job-name=short-job"]
-
-[templates.batch]
-sbatch_args = ["--time=01:00:00"]
+sbatch_args = ["--output=slurm-%j.out", "--qos=normal"]
 ```
 
 Arguments are strings in an array: `sleep infinity` is one argument. Do not add
-shell quotes inside a value. Every template requires `sbatch_args` (which can be
-empty). The default template name is `default`. A configuration containing only
-global defaults needs no templates. An explicitly selected missing template is
-an error. Existing template-only configurations continue to work.
+shell quotes inside a value. The optional `sbatch_args` array defaults to empty.
 
-All five defaults are optional strings and must be nonempty when present.
-Precedence is explicit CLI options, then the selected template, then global
-`[sbatch.defaults]` values. `submit` accepts `-A`/`--account`, `-t`/`--time`,
-`-J`/`--job-name`, and `--wrap` as overrides. Short and long template spellings,
-including attached values, are recognized; only the winning value is forwarded
-for each of these options. Repeated account/time/job-name options in a template
-use the last value; duplicate template wraps remain an error.
+All five dedicated defaults are optional strings and must be nonempty when present.
+For account, time, job name, and wrap, precedence is explicit CLI options, then
+`sbatch.defaults.sbatch_args`, then the dedicated `[sbatch.defaults]` fields.
+`submit` accepts `-A`/`--account`, `-t`/`--time`, `-J`/`--job-name`, and `--wrap`
+as overrides. Short and long argument spellings, including attached values, are
+recognized; only the winning value is forwarded for each of these options.
+Repeated account/time/job-name options in `sbatch_args` use the last value;
+duplicate wraps in the array remain an error. Invalid configuration arguments
+are rejected even when a CLI option would override them.
 Partition selection uses `-p`/`--partition` or `sbatch.defaults.partition`;
-templates still cannot set partition options.
+`sbatch_args` cannot set partition options.
 
 ```sh
 slurm-auto submit -N 2 -g 2  # Uses the default partition
-slurm-auto submit --template short -A other-account --wrap "hostname" --dry-run
+slurm-auto submit -A other-account --wrap "hostname" --dry-run
 slurm-auto submit -p gpu -N 2 -g 2 --dry-run
-slurm-auto submit --config ./config.example.toml --template default -p cpu -c 16 --dry-run
-slurm-auto submit --template batch -p cpu -c 16 -- ./job.sh 'one argument' --job-option
+slurm-auto submit --config ./config.example.toml -p cpu -c 16 --dry-run
+slurm-auto submit -p cpu -c 16 -- ./job.sh 'one argument' --job-option
 ```
 
-A submission requires exactly one workload: `--wrap` from the CLI, template,
-or global defaults, or a batch script and arguments following `--`. A script
-replaces the global default wrap. A CLI or template wrap still conflicts with
-a script. A CLI wrap overrides a template wrap. Script operands do not belong in
+A submission requires exactly one workload: `--wrap` from the CLI, `sbatch_args`,
+or the dedicated defaults, or a batch script and arguments following `--`. A script
+replaces the dedicated default wrap. A CLI or `sbatch_args` wrap still conflicts with
+a script. A CLI wrap overrides a `sbatch_args` wrap. Script operands do not belong in
 `sbatch_args`. The wrapper inserts an option terminator before the script so its
 arguments cannot be interpreted as submission options. Slurm handles script
 reading and execution. The wrapper never executes a shell; Slurm itself executes
 `--wrap` contents according to its normal behavior.
 
-For the GPU capacity example above, the default template resolves to:
+For the GPU capacity example above, the example configuration resolves to:
 
 ```sh
-sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M --account=hoge --time=24:00:00 --job-name=my-job '--wrap=sleep infinity'
+sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32 --mem=131072M --account=hoge --time=24:00:00 --job-name=my-job '--wrap=sleep infinity' --output=slurm-%j.out --qos=normal
 ```
 
-Dry-run queries `scontrol`, loads and validates the selected template, calculates
+Dry-run queries `scontrol`, loads and validates the sbatch configuration, calculates
 resources, and displays both the allocation and a POSIX shell-escaped full command.
 It never invokes `sbatch`. Real submission forwards sbatch stdout/stderr, including
 its normal `Submitted batch job <ID>` response; `--parsable` numeric responses also
 receive a labeled job ID. Failures to start `sbatch` and nonzero exits are errors.
 
-Templates cannot set partition, node/task counts, CPU or GPU allocation, memory,
+`sbatch_args` cannot set partition, node/task counts, CPU or GPU allocation, memory,
 or incompatible CPU topology/sharing controls. The policy rejects long options
 (including `--option=value` and abbreviations), resource short aliases such as
 `-p`, `-N`, `-n`, `-G`, `-g`, `-c`, and GPU-related `--gres` (`gpu`, `mps`, `shard`).
@@ -167,7 +159,7 @@ Supported non-resource short options include `-A`, `-a`, `-b`, `-C`, `-D`, `-d`,
 `-v`, `-W`, `-k`, and `-r`. Values may be separate or attached, such as `-Ahoge`.
 Options that exit without submitting, such as `--help` or `--test-only`, are rejected.
 
-Configuration, template argument policy, allocation calculation, command rendering,
+Configuration, sbatch argument policy, allocation calculation, command rendering,
 and process execution are separate modules. To exercise dry-run without a cluster,
 put a fake `scontrol` executable on `PATH` that returns
 `tests/fixtures/cluster.json` for `show node --json`. A fake `sbatch` on `PATH` can
@@ -231,10 +223,10 @@ partition, member node names, and differing capacities.
 - Script contents, embedded `#SBATCH` directives, and inherited Slurm environment
   variables are not inspected. Avoid resource directives in scripts and conflicting
   `SBATCH_*` settings; use the wrapper's resource options instead.
-- Dry-run validates template structure, workload selection, owned resource options,
+- Dry-run validates configuration structure, workload selection, owned resource options,
   and calculated resources. It does not ask Slurm to validate site-specific options,
   account permissions, script existence, or scheduler policy.
-- Template options use complete long names or supported individual short aliases.
+- `sbatch_args` options use complete long names or supported individual short aliases.
   Short flag clusters are rejected. Additional site-specific long options are
   forwarded to Slurm; use `--option=value` to remove value/flag ambiguity.
 - Output is captured and forwarded after `sbatch` exits; `--wait` therefore delays
@@ -292,5 +284,5 @@ cargo test
 ```
 
 Submission tests use fake `scontrol` and `sbatch` executables to verify defaults,
-CLI/template precedence, workload conflicts, literal argv forwarding, and dry-run
+CLI/configuration precedence, workload conflicts, literal argv forwarding, and dry-run
 rendering without a Slurm cluster.

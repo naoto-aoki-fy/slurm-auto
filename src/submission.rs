@@ -4,7 +4,7 @@ use std::{
     process::{Command, ExitStatus},
 };
 
-use crate::{command, config::Template, model::Allocation};
+use crate::{command, model::Allocation};
 
 #[derive(Debug)]
 pub enum Error {
@@ -75,7 +75,7 @@ const MANAGED: &[&str] = &[
 ];
 
 fn argument_error(argument: &str, reason: &str) -> Error {
-    Error::Arguments(format!("invalid template argument {argument:?}: {reason}"))
+    Error::Arguments(format!("invalid sbatch argument {argument:?}: {reason}"))
 }
 
 fn managed(argument: &str) -> Error {
@@ -161,11 +161,10 @@ fn flag(name: &str) -> bool {
     )
 }
 
-/// Templates contain options only. Script operands are supplied separately so an
-/// unknown option's value can never accidentally become the workload.
-fn parse_template(template: &Template) -> Result<Vec<(String, Vec<String>)>, Error> {
+/// Configured arguments contain options only. Script operands are supplied
+/// separately so an unknown option's value cannot become the workload.
+fn parse_arguments(args: &[String]) -> Result<Vec<(String, Vec<String>)>, Error> {
     let mut options = Vec::new();
-    let args = &template.sbatch_args;
     let mut index = 0;
     let mut wrap = false;
     while index < args.len() {
@@ -242,7 +241,7 @@ fn parse_template(template: &Template) -> Result<Vec<(String, Vec<String>)>, Err
             }
             (name, value)
         } else {
-            return Err(argument_error(argument, "templates contain options only; pass a batch script after -- on the submit command"));
+            return Err(argument_error(argument, "sbatch_args contains options only; pass a batch script after -- on the submit command"));
         };
         let value = if flag(name) || extension_flag {
             None
@@ -288,8 +287,8 @@ fn parse_template(template: &Template) -> Result<Vec<(String, Vec<String>)>, Err
     Ok(options)
 }
 
-pub fn validate_template(template: &Template) -> Result<bool, Error> {
-    Ok(parse_template(template)?
+pub fn validate_arguments(args: &[String]) -> Result<bool, Error> {
+    Ok(parse_arguments(args)?
         .iter()
         .any(|(name, _)| name == "wrap"))
 }
@@ -298,33 +297,35 @@ pub fn validate_template(template: &Template) -> Result<bool, Error> {
 /// Validate each layer before merging so overrides cannot hide invalid options.
 pub fn resolve(
     defaults: &crate::config::Defaults,
-    template: &Template,
-    overrides: &Template,
+    overrides: &[String],
     script_supplied: bool,
-) -> Result<Template, Error> {
+) -> Result<Vec<String>, Error> {
     defaults.validate()?;
     let mut merged: Vec<(String, Vec<String>)> = Vec::new();
-    for layer in [&defaults.arguments(script_supplied), template, overrides] {
-        for (name, args) in parse_template(layer)? {
+    let dedicated = defaults.arguments(script_supplied);
+    for layer in [
+        dedicated.as_slice(),
+        defaults.sbatch_args.as_slice(),
+        overrides,
+    ] {
+        for (name, args) in parse_arguments(layer)? {
             if matches!(name.as_str(), "account" | "time" | "job-name" | "wrap") {
                 merged.retain(|(existing, _)| existing != &name);
             }
             merged.push((name, args));
         }
     }
-    Ok(Template {
-        sbatch_args: merged.into_iter().flat_map(|(_, args)| args).collect(),
-    })
+    Ok(merged.into_iter().flat_map(|(_, args)| args).collect())
 }
 
 pub fn merge(
     allocation: &Allocation,
-    template: &Template,
+    options: &[String],
     script: &[String],
 ) -> Result<Vec<String>, Error> {
-    let wrap = validate_template(template)?;
+    let wrap = validate_arguments(options)?;
     if wrap == !script.is_empty() {
-        return Err(Error::Arguments("provide exactly one workload: --wrap (CLI, template, or default) OR a batch script after --".into()));
+        return Err(Error::Arguments("provide exactly one workload: --wrap (CLI, sbatch_args, or default) OR a batch script after --".into()));
     }
     if script.iter().any(|arg| arg.contains('\0'))
         || script.first().is_some_and(|path| path.is_empty())
@@ -334,7 +335,7 @@ pub fn merge(
         ));
     }
     let mut args = command::sbatch_args(allocation);
-    args.extend(template.sbatch_args.iter().cloned());
+    args.extend_from_slice(options);
     if !script.is_empty() {
         args.push("--".into());
         args.extend_from_slice(script);

@@ -85,12 +85,12 @@ fn loads_defaults_and_renders_shell_escaped_dry_run() {
 }
 
 #[test]
-fn cli_overrides_all_defaults_and_template_aliases_without_duplicates() {
-    for template in [
-        "[templates.default]\nsbatch_args = ['-Atemplate', '-t', '01:00:00', '-Jtemplate', '--wrap=template']",
-        "[templates.default]\nsbatch_args = ['--account=template', '--time', '01:00:00', '--job-name', 'template', '--wrap', 'template']",
+fn cli_overrides_all_defaults_and_argument_aliases_without_duplicates() {
+    for arguments in [
+        "sbatch_args = ['-Aconfigured', '-t', '01:00:00', '-Jconfigured', '--wrap=configured']",
+        "sbatch_args = ['--account=configured', '--time', '01:00:00', '--job-name', 'configured', '--wrap', 'configured']",
     ] {
-        let h = Harness::new(&format!("{DEFAULTS}\n{template}"));
+        let h = Harness::new(&format!("{DEFAULTS}\n{arguments}"));
         let text = h.success(&["submit", "-p", "cpu", "-A", "cli", "-t", "02:00:00", "-J", "cli", "--wrap", "cli", "--dry-run"]);
         let command = text.lines().last().unwrap();
         assert_eq!(command, "sbatch --partition=cpu --nodes=1 --ntasks-per-node=64 --mem=262144M --account=cli --time=02:00:00 --job-name=cli --wrap=cli");
@@ -99,7 +99,7 @@ fn cli_overrides_all_defaults_and_template_aliases_without_duplicates() {
         let text = h.success(&["submit", "--dry-run"]);
         let command = text.lines().last().unwrap();
         assert!(!command.contains("global-") && !command.contains("24:00:00"));
-        assert!(command.contains("01:00:00") && command.contains("template"));
+        assert!(command.contains("01:00:00") && command.contains("configured"));
     }
 }
 
@@ -117,7 +117,7 @@ fn script_replaces_only_default_wrap_and_preserves_argv() {
         "exactly one workload",
     );
     let h = Harness::new(&format!(
-        "{DEFAULTS}\n[templates.default]\nsbatch_args = ['--wrap=template']"
+        "{DEFAULTS}\nsbatch_args = ['--wrap=configured']"
     ));
     h.failure(&["submit", "--", "job.sh"], "exactly one workload");
     // Wrapped shell syntax is forwarded as a single literal argv entry.
@@ -128,19 +128,26 @@ fn script_replaces_only_default_wrap_and_preserves_argv() {
 }
 
 #[test]
-fn legacy_config_and_missing_values() {
-    let h = Harness::new(
-        "[templates.default]\nsbatch_args = ['-A', 'old', '--wrap', 'sleep infinity']",
+fn obsolete_templates_and_cli_option_are_rejected() {
+    for source in [
+        "[templates.default]\nsbatch_args = []",
+        "[templates]",
+        "[templates.other]\nsbatch_args = ['--wrap=true']",
+    ] {
+        let h = Harness::new(&format!("{DEFAULTS}\n{source}"));
+        h.failure(&["submit", "--dry-run"], "unknown field `templates`");
+        h.failure(&["plan"], "unknown field `templates`");
+    }
+    Harness::new(DEFAULTS).failure(
+        &["submit", "--template", "default", "--dry-run"],
+        "unexpected argument '--template'",
     );
-    assert!(h
-        .success(&["submit", "-p", "cpu", "--dry-run"])
-        .contains("-A old --wrap 'sleep infinity'"));
+}
+
+#[test]
+fn missing_defaults_and_invalid_configuration() {
+    let h = Harness::new("[sbatch.defaults]\nsbatch_args = []");
     h.failure(&["submit", "--dry-run"], "provide --partition");
-    h.failure(
-        &["submit", "-p", "cpu", "--template", "missing"],
-        "not found",
-    );
-    let h = Harness::new("[templates.default]\nsbatch_args = []");
     h.failure(
         &["submit", "-p", "cpu", "--dry-run"],
         "exactly one workload",
@@ -151,6 +158,8 @@ fn legacy_config_and_missing_values() {
         "[sbatch.defaults]\naccount = 2",
         "[sbatch.defaults]\nunknown = 'x'",
         "[sbatch.defaults]\nwrap = ''",
+        "[sbatch.defaults]\nsbatch_args = '--hold'",
+        "[sbatch.defaults]\nsbatch_args = [2]",
     ] {
         Harness::new(source).failure(
             &["submit", "-p", "cpu", "--wrap", "cli"],
@@ -160,18 +169,33 @@ fn legacy_config_and_missing_values() {
 }
 
 #[test]
-fn templates_cannot_override_managed_resources_or_hide_invalid_options() {
-    for arg in ["-p", "--partition=cpu", "--part=cpu", "--mem=1M", "--wrap="] {
-        let h = Harness::new(&format!(
-            "{DEFAULTS}\n[templates.default]\nsbatch_args = ['{arg}']"
-        ));
+fn arguments_cannot_override_managed_resources_or_hide_invalid_options() {
+    for arg in [
+        "-p",
+        "--partition=cpu",
+        "--part=cpu",
+        "--mem=1M",
+        "--gres=gpu:1",
+        "--gres=mps:100",
+        "--gres=shard:1",
+        "--wrap=",
+        "--account=",
+        "--time=",
+        "--job-name=",
+        "--help",
+        "job.sh",
+    ] {
+        let h = Harness::new(&format!("{DEFAULTS}\nsbatch_args = ['{arg}']"));
         h.failure(
-            &["submit", "--wrap", "cli", "--dry-run"],
-            "invalid template argument",
+            &[
+                "submit", "--account", "cli", "--time", "02:00:00", "--job-name", "cli",
+                "--wrap", "cli", "--dry-run",
+            ],
+            "invalid sbatch argument",
         );
     }
     let h = Harness::new(&format!(
-        "{DEFAULTS}\n[templates.default]\nsbatch_args = ['--wrap=a', '--wrap=b']"
+        "{DEFAULTS}\nsbatch_args = ['--wrap=a', '--wrap=b']"
     ));
     h.failure(&["submit", "--wrap", "cli"], "only once");
 }
@@ -203,9 +227,9 @@ fn plan_uses_only_partition_and_explicit_partition_needs_no_config() {
 }
 
 #[test]
-fn repeated_template_values_merge_with_defaults_and_keep_other_options() {
+fn repeated_argument_values_merge_with_defaults_and_keep_other_options() {
     let h = Harness::new(&format!(
-        "{DEFAULTS}\n[templates.default]\nsbatch_args = ['--account=first', '-Alast', '-t01:00:00', '--output=job.log', '--hold']"
+        "{DEFAULTS}\nsbatch_args = ['--account=first', '-Alast', '-t01:00:00', '--output=job.log', '--hold']"
     ));
     let text = h.success(&["submit", "--dry-run"]);
     let command = text.lines().last().unwrap();
@@ -224,7 +248,7 @@ fn repeated_template_values_merge_with_defaults_and_keep_other_options() {
 }
 
 #[test]
-fn config_lookup_falls_back_to_home_and_rejects_unknown_explicit_template() {
+fn config_lookup_falls_back_to_home() {
     let h = Harness::new(DEFAULTS);
     fs::create_dir_all(h.0.join(".config/slurm-auto")).unwrap();
     fs::rename(
@@ -244,9 +268,23 @@ fn config_lookup_falls_back_to_home_and_rejects_unknown_explicit_template() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let h = Harness::new(DEFAULTS);
-    h.failure(
-        &["submit", "--template", "default", "--dry-run"],
-        "not found",
+}
+
+#[test]
+fn dry_run_and_submission_use_identical_literal_arguments() {
+    let h = Harness::new(&format!(
+        "{DEFAULTS}\nsbatch_args = ['--output=job log; $(exit 99)', '--qos=normal', '--gres=bandwidth:1', '--site-option=literal value']"
+    ));
+    let dry_run = h.success(&["submit", "--dry-run", "-A", "cli"]);
+    let submitted = h.success(&["submit", "-A", "cli"]);
+    let arguments: Vec<String> = submitted
+        .lines()
+        .skip_while(|line| !line.starts_with("--partition="))
+        .map(str::to_owned)
+        .collect();
+    assert!(arguments.contains(&"--output=job log; $(exit 99)".to_owned()));
+    assert_eq!(
+        dry_run.lines().last().unwrap(),
+        slurm_auto::command::render(&arguments)
     );
 }

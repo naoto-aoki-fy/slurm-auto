@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -10,8 +7,6 @@ use crate::submission::Error;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    #[serde(default)]
-    pub templates: BTreeMap<String, Template>,
     #[serde(default)]
     pub sbatch: Sbatch,
 }
@@ -31,6 +26,8 @@ pub struct Defaults {
     pub time: Option<String>,
     pub wrap: Option<String>,
     pub job_name: Option<String>,
+    #[serde(default)]
+    pub sbatch_args: Vec<String>,
 }
 
 impl Defaults {
@@ -52,7 +49,7 @@ impl Defaults {
         Ok(())
     }
 
-    pub fn arguments(&self, script_supplied: bool) -> Template {
+    pub fn arguments(&self, script_supplied: bool) -> Vec<String> {
         let mut sbatch_args = Vec::new();
         for (name, value) in [
             ("account", &self.account),
@@ -67,36 +64,8 @@ impl Defaults {
                 sbatch_args.push(format!("--{name}={value}"));
             }
         }
-        Template { sbatch_args }
+        sbatch_args
     }
-}
-
-impl Config {
-    pub fn template(&self, name: Option<&str>) -> Result<Template, Error> {
-        let selected = name.unwrap_or("default");
-        if let Some(template) = self.templates.get(selected) {
-            return Ok(template.clone());
-        }
-        if name.is_none() && self.templates.is_empty() {
-            return Ok(Template {
-                sbatch_args: Vec::new(),
-            });
-        }
-        Err(Error::Config(format!(
-            "template {selected:?} not found; available templates: {}",
-            self.templates
-                .keys()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ")
-        )))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Template {
-    pub sbatch_args: Vec<String>,
 }
 
 pub fn default_path() -> Result<PathBuf, Error> {
@@ -120,8 +89,4 @@ pub fn load_config(path: &Path) -> Result<Config, Error> {
     })?;
     config.sbatch.defaults.validate()?;
     Ok(config)
-}
-
-pub fn load(path: &Path, name: &str) -> Result<Template, Error> {
-    load_config(path)?.template(Some(name))
 }
