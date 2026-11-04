@@ -115,7 +115,9 @@ For account, time, job name, and wrap, precedence is explicit CLI options, then
 as overrides. Short and long argument spellings, including attached values, are
 recognized; only the winning value is forwarded for each of these options.
 Repeated account/time/job-name options in `sbatch_args` use the last value;
-duplicate wraps in the array remain an error. Invalid configuration arguments
+duplicate wraps in the array remain an error. Abbreviated `--account`, `--time`,
+`--job-name`, `--wrap`, and `--gres` options are rejected so they cannot bypass
+precedence or argument checks. Invalid configuration arguments
 are rejected even when a CLI option would override them.
 Partition selection uses `-p`/`--partition` or `sbatch.defaults.partition`;
 `sbatch_args` cannot set partition options.

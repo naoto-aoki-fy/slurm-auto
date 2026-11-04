@@ -288,3 +288,85 @@ fn dry_run_and_submission_use_identical_literal_arguments() {
         slurm_auto::command::render(&arguments)
     );
 }
+
+#[test]
+fn abbreviated_options_cannot_bypass_precedence_or_validation() {
+    for option in ["acc", "acco", "ti", "tim", "job", "job-n", "wra", "gre"] {
+        for suffix in ["=configured", "", "=", "', 'configured"] {
+            let h = Harness::new(&format!(
+                "{DEFAULTS}\nsbatch_args = ['--{option}{suffix}']"
+            ));
+            for dry_run in [false, true] {
+                let mut args = vec![
+                    "submit",
+                    "--account",
+                    "cli",
+                    "--time",
+                    "02:00:00",
+                    "--job-name",
+                    "cli",
+                    "--wrap",
+                    "cli",
+                ];
+                if dry_run {
+                    args.push("--dry-run");
+                }
+                h.failure(&args, "use the complete");
+            }
+        }
+    }
+}
+
+#[test]
+fn complete_option_names_keep_similarly_named_options_and_literal_values() {
+    let h = Harness::new(&format!(
+        "{DEFAULTS}\nsbatch_args = ['--account=configured', '--time=01:00:00', '--job-name=configured', '--acctg-freq=task=30', '--time-min=00:30:00', '--comment=--nodes=99', '--site-option=--mem=1M']"
+    ));
+    let text = h.success(&["submit", "--dry-run"]);
+    let command = text.lines().last().unwrap();
+    assert_eq!(command.matches("--account=").count(), 1);
+    assert_eq!(command.matches("--time=").count(), 1);
+    assert_eq!(command.matches("--job-name=").count(), 1);
+    assert!(command.contains("--acctg-freq=task=30 --time-min=00:30:00"));
+    assert!(command.contains("--comment=--nodes=99 --site-option=--mem=1M"));
+}
+
+#[test]
+fn script_and_wrap_conflicts_are_identical_for_dry_run_and_submission() {
+    for options in ["['--wrap=first']", "['--wrap', 'first']"] {
+        let h = Harness::new(&format!("{DEFAULTS}\nsbatch_args = {options}"));
+        for args in [
+            vec!["submit", "--", "job.sh"],
+            vec!["submit", "--dry-run", "--", "job.sh"],
+            vec!["submit", "--wrap", "cli", "--", "job.sh"],
+            vec!["submit", "--dry-run", "--wrap", "cli", "--", "job.sh"],
+        ] {
+            h.failure(&args, "exactly one workload");
+        }
+    }
+}
+
+#[test]
+fn dry_run_never_requires_sbatch_and_script_arguments_remain_operands() {
+    let h = Harness::new(DEFAULTS);
+    fs::remove_file(h.0.join("sbatch")).unwrap();
+    let text = h.success(&[
+        "submit", "--dry-run", "--", "job.sh", "--template", "old", "--nodes=99",
+    ]);
+    assert!(text.ends_with("-- job.sh --template old --nodes=99\n"));
+    h.failure(&["submit"], "failed to execute sbatch");
+}
+
+#[test]
+fn inspection_and_planning_do_not_apply_submission_argument_policy() {
+    let h = Harness::new(&format!(
+        "{DEFAULTS}\nsbatch_args = ['--nodes=99', '--wrap=first', '--wrap=second']"
+    ));
+    h.success(&["inspect"]);
+    let text = h.success(&["plan"]);
+    assert!(text.contains("sbatch --partition=gpu --nodes=1"));
+    assert!(!text.contains("--wrap") && !text.contains("--nodes=99"));
+    let h = Harness::new("[templates.default]\nsbatch_args = []");
+    h.success(&["inspect"]);
+    h.success(&["plan", "-p", "cpu"]);
+}

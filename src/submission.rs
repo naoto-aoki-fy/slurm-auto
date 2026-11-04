@@ -190,13 +190,13 @@ fn parse_arguments(args: &[String]) -> Result<Vec<(String, Vec<String>)>, Error>
             if MANAGED.iter().any(|owned| owned.starts_with(name)) {
                 return Err(managed(argument));
             }
-            if ["gres", "wrap"]
+            if ["account", "time", "job-name", "gres", "wrap"]
                 .iter()
                 .any(|full| *full != name && full.starts_with(name))
             {
                 return Err(argument_error(
                     argument,
-                    "use the complete --gres or --wrap option name",
+                    "use the complete --account, --time, --job-name, --gres, or --wrap option name",
                 ));
             }
             // These alter submission semantics or can bypass the single workload.
