@@ -11,7 +11,8 @@ from .model import Allocation, SlurmAutoError, WHITESPACE
 # abbreviations cannot bypass the resource policy.
 MANAGED = (
     "partition", "nodes", "ntasks", "ntasks-per-node", "ntasks-per-core",
-    "ntasks-per-socket", "ntasks-per-gpu", "gpus", "gpus-per-node", "gpus-per-task",
+    "ntasks-per-socket", "ntasks-per-gpu", "ntasks-per-tres", "tasks-per-node",
+    "gpus", "gpus-per-node", "gpus-per-task",
     "gpus-per-socket", "cpus-per-task", "cpus-per-gpu", "mem", "mem-per-cpu",
     "mem-per-gpu", "mem-per-socket", "mincpus", "sockets-per-node", "cores-per-socket",
     "threads-per-core", "extra-node-info", "hint", "overcommit", "oversubscribe",
@@ -32,6 +33,8 @@ VALUE_OPTIONS = frozenset((
     "power", "priority", "profile", "propagate", "qos", "reservation", "signal",
     "switches", "time", "time-min", "uid", "wait-all-nodes", "wckey", "wrap",
 ))
+# Slurm's optional values must be attached, or the value becomes the script operand.
+OPTIONAL_VALUE_OPTIONS = frozenset(("get-user-env", "nice", "propagate"))
 FLAGS = frozenset((
     "contiguous", "hold", "ignore-pbs", "no-kill", "no-requeue", "parsable", "quiet",
     "reboot", "requeue", "use-min-nodes", "verbose", "wait", "spread-job",
@@ -57,7 +60,7 @@ def managed_error(argument: str) -> SlurmAutoError:
 
 
 def parse_arguments(args: Sequence[str]) -> List[Tuple[str, List[str]]]:
-    """Validate option-only argv and retain the original tokens for each option."""
+    """Validate and group sbatch options for direct execution."""
     options = []
     index = 0
     wrap = False
@@ -120,16 +123,26 @@ def parse_arguments(args: Sequence[str]) -> List[Tuple[str, List[str]]]:
             if value is not None:
                 if not value or "\0" in value:
                     raise argument_error(argument, "option value must be nonempty and contain no NUL bytes")
-                if name == "gres" and any(
-                    entry.split(":", 1)[0] in ("gpu", "mps", "shard") for entry in value.split(",")
-                ):
-                    raise managed_error(argument)
+                if name == "gres":
+                    for entry in value.split(","):
+                        resource = entry.partition(":")[0].strip().lower().removeprefix("gres/").strip()
+                        if resource in ("gpu", "mps", "shard"):
+                            raise managed_error(argument)
 
         if name == "wrap":
             if wrap:
                 raise argument_error(argument, "--wrap must appear only once")
             wrap = True
-        options.append((name, list(args[start : index + 1])))
+        # Slurm's first pass removes standalone ":" tokens. An unknown site
+        # option may also take an optional value, so attach it before forwarding.
+        if index > start and (
+            args[index] == ":" or name in OPTIONAL_VALUE_OPTIONS or name not in VALUE_OPTIONS
+        ):
+            joiner = "=" if argument.startswith("--") else ""
+            tokens = [argument + joiner + args[index]]
+        else:
+            tokens = list(args[start : index + 1])
+        options.append((name, tokens))
         index += 1
     return options
 
@@ -148,7 +161,8 @@ def resolve(defaults: Defaults, overrides: Defaults, script_supplied: bool) -> L
 
 
 def merge(allocation: Allocation, options: Sequence[str], script: Sequence[str]) -> List[str]:
-    wrap = any(name == "wrap" for name, _ in parse_arguments(options))
+    parsed = parse_arguments(options)
+    wrap = any(name == "wrap" for name, _ in parsed)
     if wrap == bool(script):
         raise SlurmAutoError(
             "provide exactly one workload: --wrap (CLI, sbatch_args, or default) "
@@ -156,8 +170,10 @@ def merge(allocation: Allocation, options: Sequence[str], script: Sequence[str])
         )
     if script and (not script[0] or any("\0" in arg for arg in script)):
         raise SlurmAutoError("batch script path must be nonempty; script arguments cannot contain NUL bytes")
+    if script and script[0] == ":":
+        raise SlurmAutoError("use './:' for a script named ':' because Slurm treats ':' as a job separator")
     args = command.sbatch_args(allocation)
-    args.extend(options)
+    args.extend(arg for _, tokens in parsed for arg in tokens)
     if script:
         args.extend(["--", *script])
     return args

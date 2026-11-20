@@ -19,11 +19,14 @@ class ArgumentPolicyTests(unittest.TestCase):
                     parse_arguments(args)
 
     def test_gpu_related_gres_conflict_even_in_a_list(self):
-        for value in ("gpu:1", "mps:100", "shard:1", "bandwidth:1,gpu:a100:2", "gpu"):
+        for value in (
+            "gpu:1", "mps:100", "shard:1", "bandwidth:1,gpu:a100:2", "gpu",
+            "gres/gpu:2", "bandwidth:1,gres/mps:2", "gres/shard:1", "GPU:1", "bandwidth:1, shard:2",
+        ):
             for args in (["--gres", value], [f"--gres={value}"]):
                 with self.subTest(args=args), self.assertRaisesRegex(SlurmAutoError, "managed resources"):
                     parse_arguments(args)
-        props = ["--gres=bandwidth:1,gpu_mem:80", "--gres-flags=disable-binding"]
+        props = ["--gres=bandwidth:1,gres/gpu_mem:80", "--gres-flags=disable-binding"]
         self.assertEqual(parse_arguments(props), [("gres", props[:1]), ("gres-flags", props[1:])])
 
     def test_rejects_options_that_do_not_submit_and_ambiguous_or_malformed_tokens(self):
@@ -36,14 +39,18 @@ class ArgumentPolicyTests(unittest.TestCase):
             with self.subTest(args=args), self.assertRaisesRegex(SlurmAutoError, "invalid sbatch argument"):
                 parse_arguments(args)
 
-    def test_allowed_short_and_site_options_preserve_tokens(self):
+    def test_allowed_short_and_site_option_values(self):
         args = ["-Aacct", "-a", "1-10", "-t01:00:00", "-v", "--site-option=--nodes=2",
                 "--site-flag", "--other-option", "literal value"]
         self.assertEqual(parse_arguments(args), [
             ("account", ["-Aacct"]), ("array", ["-a", "1-10"]), ("time", ["-t01:00:00"]),
             ("verbose", ["-v"]), ("site-option", ["--site-option=--nodes=2"]),
-            ("site-flag", ["--site-flag"]), ("other-option", ["--other-option", "literal value"]),
+            ("site-flag", ["--site-flag"]), ("other-option", ["--other-option=literal value"]),
         ])
+        self.assertEqual(parse_arguments(["-o", ":"]), [("output", ["-o:"])])
+        allocation = Allocation("cpu", 1, None, 64, None)
+        args = merge(allocation, ["--nice", "1"], ["job.sh"])
+        self.assertEqual(args[-3:], ["--nice=1", "--", "job.sh"])
 
     def test_rejects_invalid_script_operands(self):
         allocation = Allocation("cpu", 1, None, 64, None)

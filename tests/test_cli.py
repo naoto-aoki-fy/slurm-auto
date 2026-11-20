@@ -281,8 +281,12 @@ class CliTests(unittest.TestCase):
 
     def test_invalid_sbatch_arguments_cannot_be_hidden_by_cli_overrides(self):
         overrides = ("--account", "cli", "--time", "02:00:00", "--job-name", "cli", "--wrap", "cli")
-        for option in ("-p", "--partition=cpu", "--part=cpu", "--mem=1M", "--gres=gpu:1", "--gres=mps:100",
-                       "--gres=shard:1", "--wrap=", "--account=", "--time=", "--job-name=", "--help", "job.sh"):
+        for option in (
+            "-p", "--partition=cpu", "--part=cpu", "--mem=1M", "--tasks-per-node=2", "--tasks-per-n=2",
+            "--ntasks-per-tres=2", "--ntasks-per-t=2", "--gres=gpu:1", "--gres=mps:100",
+            "--gres=shard:1", "--gres=gres/gpu:1", "--wrap=", "--account=", "--time=", "--job-name=",
+            "--help", "job.sh",
+        ):
             with self.subTest(option=option):
                 self.write_config(dict(DEFAULTS, sbatch_args=[option]))
                 self.failure("submit", *overrides, "--dry-run", message="invalid sbatch argument")
@@ -365,6 +369,23 @@ class CliTests(unittest.TestCase):
         self.success("submit", "-A", "cli")
         self.assertIn("--output=job log; $(exit 99)", self.argv())
         self.assertEqual(shlex.split(text.splitlines()[-1]), ["sbatch", *self.argv()])
+
+    def test_sbatch_value_operands_cannot_displace_the_batch_script(self):
+        self.write_config(dict(DEFAULTS, sbatch_args=[
+            "--propagate", "NOFILE", "--get-user-env", "10L", "--nice", "1",
+            "--site-option", "literal value", "-o", "job.log", "--comment", ":",
+        ]))
+        text = self.success("submit", "--dry-run", "--", "./:", "kept verbatim")
+        self.assertFalse(self.sbatch_log.exists())
+        self.success("submit", "--", "./:", "kept verbatim")
+        self.assertEqual(shlex.split(text.splitlines()[-1]), ["sbatch", *self.argv()])
+        self.assertEqual(self.argv()[-10:], [
+            "--propagate=NOFILE", "--get-user-env=10L", "--nice=1", "--site-option=literal value",
+            "-o", "job.log", "--comment=:", "--", "./:", "kept verbatim",
+        ])
+        self.failure("submit", "--dry-run", "--", ":", "other.sh", message="job separator")
+        self.write_config(dict(DEFAULTS, sbatch_args=["--wrap", ":"]))
+        self.assertIn("--wrap=:", self.success("submit", "--dry-run"))
 
     def test_forwards_binary_streams_and_preserves_exit_status_and_job_id(self):
         self.write_config(dict(DEFAULTS, sbatch_args=["--parsable"]))

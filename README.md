@@ -139,9 +139,10 @@ or the dedicated defaults, or a batch script and arguments following `--`. A scr
 replaces the dedicated default wrap. A CLI or `sbatch_args` wrap still conflicts with
 a script. A CLI wrap overrides a `sbatch_args` wrap. Script operands do not belong in
 `sbatch_args`. The wrapper inserts an option terminator before the script so its
-arguments cannot be interpreted as submission options. Slurm handles script
-reading and execution. The wrapper never executes a shell; Slurm itself executes
-`--wrap` contents according to its normal behavior.
+arguments cannot be interpreted as submission options. Use `./:` for a script named
+`:` because Slurm treats a standalone colon as a heterogeneous job separator.
+Slurm reads and executes the script. For `--wrap`, Slurm executes the command
+using its normal shell behavior.
 
 For the GPU capacity example above, the example configuration resolves to:
 
@@ -159,7 +160,10 @@ receive a labeled job ID. Failures to start `sbatch` and nonzero exits are error
 or incompatible CPU topology/sharing controls. The policy rejects long options
 (including `--option=value` and abbreviations), resource short aliases such as
 `-p`, `-N`, `-n`, `-G`, `-g`, `-c`, and GPU-related `--gres` (`gpu`, `mps`, `shard`).
-Non-GPU GRES remain allowed. Conflict messages identify the offending argument.
+The Python version also rejects Slurm's `--tasks-per-node` and `--ntasks-per-tres`
+aliases and recognizes GPU-related names in `--gres` with a `gres/` prefix
+or different capitalization. Non-GPU GRES remain allowed. Conflict messages
+identify the offending argument.
 Supported non-resource short options include `-A`, `-a`, `-b`, `-C`, `-D`, `-d`,
 `-e`, `-i`, `-J`, `-L`, `-M`, `-m`, `-o`, `-q`, `-t`, `-w`, `-x`, `-H`, `-Q`,
 `-v`, `-W`, `-k`, and `-r`. Values may be separate or attached, such as `-Ahoge`.
@@ -237,7 +241,10 @@ partition, member node names, and differing capacities.
   account permissions, script existence, or scheduler policy.
 - `sbatch_args` options use complete long names or supported individual short aliases.
   Short flag clusters are rejected. Additional site-specific long options are
-  forwarded to Slurm; use `--option=value` to remove value/flag ambiguity.
+  forwarded to Slurm. The wrapper attaches separate values to options such as
+  `--nice`, `--get-user-env`, `--propagate`, and site-specific long options so Slurm
+  cannot take those values as script operands. It also attaches a standalone
+  colon used as an option value.
 - Output is captured and forwarded after `sbatch` exits; `--wait` therefore delays
   output until the job completes. A process killed by a signal returns wrapper
   status 1; ordinary sbatch nonzero exit codes are preserved.
