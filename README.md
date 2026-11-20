@@ -1,45 +1,23 @@
 # sbatch-auto
 
-A Rust CLI that inspects configured Slurm node capacity and generates proportional
+A Python CLI that inspects configured Slurm node capacity and generates proportional
 `sbatch` resource arguments. It supports inspection, planning, and submission
-using TOML sbatch defaults. Only `submit` without `--dry-run` starts `sbatch`.
+using JSON sbatch defaults. Only `submit` without `--dry-run` starts `sbatch`.
 
 ## Installation
 
-Automatic releases provide prebuilt static Linux binaries on the repository's
-[GitHub Releases page](https://github.com/naoto-aoki-fy/slurm-utility/releases).
-Choose the executable matching your machine:
-
-| Target | Release asset |
-| --- | --- |
-| x86-64 | `sbatch-auto-vMAJOR.MINOR.PATCH-x86_64-unknown-linux-musl` |
-| ARM64 | `sbatch-auto-vMAJOR.MINOR.PATCH-aarch64-unknown-linux-musl` |
-
-Assets are raw, uncompressed executables. Download the matching asset, rename it
-to `sbatch-auto`, mark it executable, and place it in a directory on your `PATH`.
-For example, on x86-64 Linux, set `release_tag` to the release version:
+Install the `sbatch-auto` command from GitHub with [uv](https://docs.astral.sh/uv/).
+The package requires Python 3.9 or newer and uses only the Python standard library
+at runtime.
 
 ```sh
-release_tag=vMAJOR.MINOR.PATCH
-curl -fL -o sbatch-auto "https://github.com/naoto-aoki-fy/slurm-utility/releases/download/${release_tag}/sbatch-auto-${release_tag}-x86_64-unknown-linux-musl"
-chmod +x sbatch-auto
-./sbatch-auto --version
-```
-
-Raw downloads do not retain Unix executable permissions, so `chmod +x` is required.
-The Cargo package is named `slurm-auto`; its executable is `sbatch-auto`.
-Older releases may provide executables with the former `slurm-auto` name.
-
-Install a current stable Rust toolchain, then run:
-
-```sh
-cargo install --path .
+uv tool install --python 3.9 "git+https://github.com/naoto-aoki-fy/slurm-auto.git@main"
+sbatch-auto --help
 ```
 
 At runtime, `scontrol` must be on `PATH`, connected to the intended cluster, and
-support `scontrol show node --json`. The CLI invokes that executable directly
-with separate arguments, without a shell. Cargo needs access to crates.io on
-the first build to obtain `clap`, `serde`, `serde_json`, and `toml`.
+support `scontrol show node --json`. Actual submission also requires `sbatch` on
+`PATH`. The CLI invokes both executables directly with separate arguments.
 
 ## Usage
 
@@ -88,31 +66,46 @@ when using the arguments outside this tool. No `sbatch` process is started.
 
 ## Submission configuration
 
-Copy [config.example.toml](config.example.toml) to
-`~/.config/slurm-auto/config.toml` and replace the account with your cluster account.
+Copy [config.example.json](config.example.json) to
+`~/.config/slurm-auto/config.json` and replace the account with your cluster account.
 An absolute `$XDG_CONFIG_HOME` takes precedence over `~/.config`; `--config <path>`
 overrides the default location. Explicit paths are used literally (the shell can
 expand `~`); missing files and unknown fields are errors.
-Obsolete `[templates.*]` sections are rejected; `--template` is unsupported.
+Obsolete `templates` sections and the `--template` option are rejected.
 `inspect` does not load configuration. `plan` loads configuration for partition
 and memory defaults; `plan --config <path>` selects a custom file and requires it
 to exist. An explicit `plan -p ...` works without an installed default configuration
 file; if one exists, it is loaded and validated. Planning remains a resource-only
 preview, ignoring workload and other submission defaults.
 
-```toml
-[sbatch.defaults]
-account = "hoge"
-partition = "gpu"
-memory = "omit"
-time = "24:00:00"
-wrap = "sleep infinity"
-job_name = "my-job"
-sbatch_args = ["--output=slurm-%j.out", "--qos=normal"]
+```json
+{
+  "sbatch": {
+    "defaults": {
+      "account": "hoge",
+      "partition": "gpu",
+      "memory": "omit",
+      "time": "24:00:00",
+      "wrap": "sleep infinity",
+      "job_name": "my-job",
+      "sbatch_args": [
+        "--output=slurm-%j.out",
+        "--qos=normal"
+      ]
+    }
+  }
+}
 ```
 
-Arguments are strings in an array: `sleep infinity` is one argument. Do not add
-shell quotes inside a value. The optional `sbatch_args` array defaults to empty.
+To migrate a TOML configuration, copy the values from `[sbatch.defaults]` into
+the nested `"sbatch"` and `"defaults"` JSON objects shown above. Use double-quoted
+keys and strings, remove TOML comments, and save the result as `config.json`.
+Migrate any custom file passed to `--config` as well.
+
+Each `sbatch_args` array element is a literal argument. A value such as
+`sleep infinity` stays one argument, so only use JSON quoting. The optional array
+defaults to empty. Omit unset fields. The configuration loader rejects `null`
+values and duplicate object keys.
 
 The five dedicated string defaults are optional and must be nonempty when present.
 `memory` accepts `"omit"` (default) or `"proportional"`. Both `plan` and `submit`
@@ -120,7 +113,7 @@ accept `--memory omit|proportional`, overriding the configuration. With `omit`,
 no memory size is passed to sbatch; Slurm applies its defaults. With `proportional`,
 the calculated memory is passed as `--mem=<MiB>M`.
 For account, time, job name, and wrap, precedence is explicit CLI options, then
-`sbatch.defaults.sbatch_args`, then the dedicated `[sbatch.defaults]` fields.
+`sbatch.defaults.sbatch_args`, then the dedicated `sbatch.defaults` fields.
 `submit` accepts `-A`/`--account`, `-t`/`--time`, `-J`/`--job-name`, and `--wrap`
 as overrides. Short and long argument spellings, including attached values, are
 recognized; only the winning value is forwarded for each of these options.
@@ -136,7 +129,7 @@ Partition selection uses `-p`/`--partition` or `sbatch.defaults.partition`;
 sbatch-auto submit -N 2 -g 2  # Uses the default partition
 sbatch-auto submit -A other-account --wrap "hostname" --dry-run
 sbatch-auto submit -p gpu -N 2 -g 2 --dry-run
-sbatch-auto submit --config ./config.example.toml -p cpu -c 16 --dry-run
+sbatch-auto submit --config ./config.example.json -p cpu -c 16 --dry-run
 sbatch-auto submit -p cpu -c 16 -- ./job.sh 'one argument' --job-option
 ```
 
@@ -205,6 +198,7 @@ Discovery reads `nodes`, node `name`, `partitions`, `effective_cpus` (also accep
 Missing, null, or explicitly unset effective CPU values fall back to `cpus`.
 Numeric fields accept unsigned integers and finite Slurm tagged numeric objects
 (`set`, `infinite`, `number`). Malformed effective CPU values are errors.
+Discovery also rejects duplicate JSON object keys and malformed Unicode escapes.
 Partition membership accepts a string array or comma-separated string; null or
 empty membership means the node is unassigned and contributes to no partition.
 Nodes in multiple partitions contribute to each. Duplicate node records fail.
@@ -246,56 +240,36 @@ partition, member node names, and differing capacities.
   output until the job completes. A process killed by a signal returns wrapper
   status 1; ordinary sbatch nonzero exit codes are preserved.
 
-## Automatic releases
+## Distribution
 
-Every push to `main` triggers [.github/workflows/release.yml](.github/workflows/release.yml).
-The workflow checks out the exact triggering commit, runs the existing tests on
-Linux without a Slurm cluster, and uses a build matrix with `cross` 0.2.5 and
-Rust 1.93.0 to build both musl targets in release mode. `Cargo.lock` fixes the
-application dependency versions; builds use `--locked`. Neither a manually
-created tag nor a separate publishing step is required.
+This version is distributed as a Python package directly from the Git repository.
+Use `uv tool install` with `@main` for the current version or with a commit SHA
+for a reproducible installation. Historical GitHub releases contain the previous
+static Linux binaries. The Python version requires neither Rust nor Cargo.
 
-Only after tests and both builds succeed does the publishing job download both
-executables and allocate a version. It fetches the full tag history and considers
-only exact `vMAJOR.MINOR.PATCH` tags containing non-negative integers. Versions
-are compared numerically, ignoring prereleases and other tag formats. The highest
-version's PATCH increases by one, keeping MAJOR and MINOR unchanged; without a
-matching tag the first release is `v0.0.1`. This release version is independent
-of the package version in `Cargo.toml`.
-
-Publishing jobs share a concurrency group with queued execution, so version
-allocation and publication happen sequentially. The built-in `GITHUB_TOKEN`
-has read access during builds and `contents: write` only in the publishing job.
-Repository rules must allow that token to create release tags. The tag points
-to the triggering commit, and the release includes automatically generated notes
-and both versioned raw executables listed above.
-
-A release remains a draft until both assets have been uploaded. A rerun reuses
-an existing version tag for the same commit, resumes a draft by uploading missing
-assets, or skips an already published release after checking both assets exist.
-Existing tags, releases, and uploaded assets are never overwritten. Interrupted
-publishing can leave a tag or draft; rerun the failed workflow to finish it. A
-published release with a missing or empty asset causes a rerun to fail rather
-than modify the release. Build or test failures create no tag or release.
+GitHub Actions runs the tests on Python 3.9 and 3.14 and installs the exact
+tested revision via a Git URL. The workflow also checks that the installed
+console script responds to `--help`.
 
 ## Development
 
-The library separates discovery/GRES parsing, models, partition/request validation,
-resource calculation, and command generation. The binary handles CLI parsing and
-readable output. Future calculated options can extend the allocation model and
-argument generation without mixing discovery with submission behavior.
+The `src/slurm_auto/` package separates discovery and GRES parsing, models,
+partition and request validation, resource calculation, configuration, command
+rendering, and submission. The CLI uses `argparse`, so help layouts and
+command-line parser diagnostics differ from the Rust version.
 
-Tests use JSON fixtures and, on Unix, a temporary fake `scontrol` executable.
-No real Slurm cluster or GPU is needed. Both documented resource examples are
-explicit acceptance tests. Unix CLI tests also cover argument validation,
-command failures, and planning with no `sbatch` executable available.
+Install the project locally in an isolated environment and run the test suite
+with Python 3.9.
 
 ```sh
-cargo fmt
-cargo clippy --all-targets -- -D warnings
-cargo test
+uv venv --python 3.9
+uv pip install -e .
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/sbatch-auto --help
 ```
 
-Submission tests use fake `scontrol` and `sbatch` executables to verify defaults,
-CLI/configuration precedence, workload conflicts, literal argv forwarding, and dry-run
-rendering without a Slurm cluster.
+The tests reuse the Slurm JSON fixtures and run fake `scontrol` and `sbatch`
+executables on POSIX. They cover both documented resource examples, validation,
+configuration and CLI precedence, workload conflicts, literal argv forwarding,
+dry-run rendering, and subprocess exit behavior. They require no Slurm cluster
+or GPU.
