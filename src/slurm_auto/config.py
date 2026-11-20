@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import json_input
-from .model import MemoryMode, SlurmAutoError
+from .model import MemoryMode, SlurmAutoError, WHITESPACE
 
 DEFAULT_STRING_FIELDS = ("account", "partition", "time", "wrap", "job_name")
 
@@ -22,7 +22,7 @@ class Defaults:
     def validate(self) -> None:
         for name in DEFAULT_STRING_FIELDS:
             value = getattr(self, name)
-            if value is not None and (not value.strip() or "\0" in value):
+            if value is not None and (not value.strip(WHITESPACE) or "\0" in value):
                 raise SlurmAutoError(
                     f"invalid configuration: sbatch.defaults.{name} must be nonempty "
                     "and contain no NUL bytes"
@@ -53,7 +53,7 @@ def select_partition(partition: Optional[str], defaults: Defaults) -> str:
         partition = defaults.partition
     if partition is None:
         raise SlurmAutoError("provide --partition (-p) or configure sbatch.defaults.partition")
-    if not partition.strip() or "\0" in partition:
+    if not partition.strip(WHITESPACE) or "\0" in partition:
         raise SlurmAutoError("partition must be nonempty and contain no NUL bytes")
     return partition
 

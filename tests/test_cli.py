@@ -110,6 +110,7 @@ class CliTests(unittest.TestCase):
                 self.assertIn(subcommand, text)
         self.assertEqual(self.success("help", "submit"), self.success("submit", "--help"))
         self.assertRegex(self.success("-V"), r"^sbatch-auto \d+\.\d+\.\d+\n$")
+        self.failure("help", "plan", "--", status=2)
         self.failure(status=2)
 
     def test_inspect_and_plan_without_sbatch_or_config(self):
@@ -117,11 +118,14 @@ class CliTests(unittest.TestCase):
         text = self.success("inspect")
         for detail in ("PARTITION", "cpu", "gpu", "shared", "262144"):
             self.assertIn(detail, text)
+        self.assertEqual(text, self.success("inspect", "--"))
         self.assertIn("sbatch --partition=gpu --nodes=2 --gpus-per-node=2 --ntasks-per-node=32",
                       self.success("plan", "-p", "gpu", "-N", "2", "-g", "2"))
         self.assertIn("sbatch --partition=cpu --nodes=1 --ntasks-per-node=16",
                       self.success("plan", "--partition", "cpu", "--nodes", "1", "--cpus-per-node", "16"))
         self.assertIn("--nodes=1 --gpus-per-node=4 --ntasks-per-node=64", self.success("plan", "-p", "gpu"))
+        self.assertEqual(self.success("plan", "-p", "gpu"), self.success("plan", "-p", "gpu", "--"))
+        self.failure("plan", "-p", "gpu", "--", "job.sh", status=2)
         self.assertFalse(self.sbatch_log.exists())
 
     def test_resource_validation_and_cli_parse_failures(self):
@@ -151,6 +155,29 @@ class CliTests(unittest.TestCase):
             self.failure("inspect", message=message, status=1)
         (self.directory / "scontrol").unlink()
         self.failure("inspect", message="failed to execute scontrol", status=1)
+
+    def test_string_values_beginning_with_dash_and_utf8_operands(self):
+        self.write_config()
+        for value in ("-1", "--value with space"):
+            with self.subTest(value=value):
+                self.failure("submit", "--wrap", value, "--dry-run", status=2)
+                text = self.success("submit", f"--wrap={value}", "--dry-run")
+                self.assertIn(f"--wrap={value}", shlex.split(text.splitlines()[-1]))
+        self.assertIn("--wrap=-", self.success("submit", "--wrap", "-", "--dry-run"))
+        if sys.getfilesystemencoding() == "utf-8":
+            invalid = os.fsdecode(b"\xff")
+            for args in (
+                ("plan", "-p", invalid),
+                ("submit", "--wrap", invalid, "--dry-run"),
+                ("submit", "--", invalid),
+                ("submit", "--", "job.sh", invalid),
+            ):
+                with self.subTest(args=args):
+                    self.failure(*args, message="expected a UTF-8 argument", status=2)
+            config = self.directory / f"config-{invalid}.json"
+            self.write_config(path=config)
+            self.assertIn("--partition=gpu", self.success("plan", "--config", str(config)))
+        self.assertFalse(self.sbatch_log.exists())
 
     def test_dry_run_uses_defaults_and_never_invokes_sbatch(self):
         self.write_config()
@@ -352,6 +379,11 @@ class CliTests(unittest.TestCase):
         result = self.run_cli("submit")
         self.assertEqual(result.returncode, 0)
         self.assertTrue(result.stdout.endswith(b"Submitted batch job 56789\n"))
+
+        self.env["SBATCH_STDOUT"] = b"\x1c12345\n".hex()
+        result = self.run_cli("submit")
+        self.assertTrue(result.stdout.endswith(b"\x1c12345\n"))
+        self.assertNotIn(b"Submitted job ID", result.stdout)
 
         self.env["SBATCH_STDOUT"] = b"12345;cluster\nprevious output\xfe\n".hex()
         self.env["SBATCH_EXIT"] = "37"

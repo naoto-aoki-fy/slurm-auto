@@ -6,11 +6,28 @@ from typing import Optional, Sequence
 from . import __version__, calculation, command, config, discovery, submission
 from .model import Allocation, MemoryMode, Request, SlurmAutoError, unsigned_count
 
+STRING_VALUE_OPTIONS = frozenset((
+    "-p", "--partition", "--config", "-A", "--account", "-t", "--time",
+    "-J", "--job-name", "--wrap",
+))
+
+
+def require_utf8(value: str) -> None:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise argparse.ArgumentTypeError("expected a UTF-8 argument") from error
+
 
 class StoreOnce(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         if getattr(namespace, self.dest) is not None:
             raise argparse.ArgumentError(self, f"{option_string} may be used only once")
+        if isinstance(values, str):
+            try:
+                require_utf8(values)
+            except argparse.ArgumentTypeError as error:
+                raise argparse.ArgumentError(self, str(error)) from error
         setattr(namespace, self.dest, self.const if self.nargs == 0 else values)
 
 
@@ -138,13 +155,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = build_parser()
     arguments = list(sys.argv[1:] if argv is None else argv)
     script = []
-    if arguments[:1] == ["submit"] and "--" in arguments:
+    if "--" in arguments:
         marker = arguments.index("--")
-        arguments, script = arguments[:marker], arguments[marker + 1 :]
+        if arguments[0] == "submit":
+            arguments, script = arguments[:marker], arguments[marker + 1 :]
+        elif arguments[0] in ("plan", "inspect") and marker == len(arguments) - 1:
+            arguments.pop()
     args = parser.parse_args(arguments)
     if args.action == "help":
+        if "--" in arguments:
+            parser.error("unexpected '--' after help")
         args.topics.get(args.topic, parser).print_help()
         return 0
+
+    # argparse treats negative numbers and some space-containing tokens as
+    # operands. A dash-leading string value must be attached, except for '-'.
+    for option, value in zip(arguments, arguments[1:]):
+        if option in STRING_VALUE_OPTIONS and value.startswith("-") and value != "-":
+            parser.error(f"attach dash-leading values to {option}, for example {option}=VALUE")
+    try:
+        for operand in script:
+            require_utf8(operand)
+    except argparse.ArgumentTypeError as error:
+        parser.error(str(error))
+
     try:
         run(args, script)
     except SlurmAutoError as error:

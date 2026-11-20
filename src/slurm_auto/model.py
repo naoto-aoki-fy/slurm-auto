@@ -4,6 +4,12 @@ from enum import Enum
 from typing import Optional, Tuple
 
 U64_MAX = (1 << 64) - 1
+# Unicode White_Space used by Rust's trim and is_whitespace. Python also
+# treats the four ASCII information separators U+001C through U+001F as space.
+WHITESPACE = (
+    " \t\n\r\v\f\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+    "\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+)
 
 
 class SlurmAutoError(Exception):

@@ -106,6 +106,7 @@ class DiscoveryTests(unittest.TestCase):
             ("gpu:a100:2(IDX:0,1),gpu:h100:2(S:1),mps:400", 4),
             ("bandwidth:lustre:no_consume:4G,gpu_mem:80", 0), ("shard:100,gpu:4(S:0-1)", 4),
             ("gpu:1 (S:0) (IDX:1), gpu:0", 1), (f"gpu:{U64_MAX}", U64_MAX),
+            ("\u0085gpu:4\u2000", 4), ("\x1cgpu:4", 0), ("gpu:\x1c:4", 4),
         ):
             with self.subTest(text=text):
                 self.assertEqual(parse_gres(text), expected)
@@ -115,6 +116,7 @@ class DiscoveryTests(unittest.TestCase):
             "gpu", "gpu:a100", "gpu:-1", "gpu:1.5", "gpu:a100:2:3", f"gpu:{U64_MAX + 1}",
             f"gpu:{U64_MAX},gpu:1", "gpu:4(S:0", "gpu:4)ending", "gpu:4(S:0)junk",
             "gpu:4,", "gpu::4", "gpu:4((S:0))", "gpu:４", "shard",
+            "gpu:4\x1c", "gpu:4(S:0)\x1c", "gpu:4(S:0)\x1c(IDX:1)",
         ):
             with self.subTest(text=text), self.assertRaisesRegex(SlurmAutoError, "GRES"):
                 parse_gres(text)

@@ -5,7 +5,7 @@ from typing import List, Sequence, Tuple
 
 from . import command
 from .config import Defaults
-from .model import Allocation, SlurmAutoError
+from .model import Allocation, SlurmAutoError, WHITESPACE
 
 # Long prefixes of these options belong to the wrapper too, so getopt
 # abbreviations cannot bypass the resource policy.
@@ -187,6 +187,6 @@ def execute(args: Sequence[str]) -> None:
         )
 
     # Standard sbatch output already contains a job ID. Label --parsable output too.
-    job_id = output.stdout.decode("utf-8", errors="replace").strip().split(";", 1)[0]
+    job_id = output.stdout.decode("utf-8", errors="replace").strip(WHITESPACE).split(";", 1)[0]
     if job_id.isascii() and job_id.isdigit():
         print(f"Submitted job ID: {job_id}")

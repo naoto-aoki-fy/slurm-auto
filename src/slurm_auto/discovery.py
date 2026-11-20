@@ -4,8 +4,10 @@ import subprocess
 from typing import Dict, List, Tuple
 
 from . import json_input
-from .model import Capacity, Node, Partition, SlurmAutoError, U64_MAX, unsigned_count
+from .model import Capacity, Node, Partition, SlurmAutoError, U64_MAX, WHITESPACE, unsigned_count
 from .validation import aggregate
+
+GRES_ANNOTATIONS = re.compile(rf"(?:\([^()]*\)[{WHITESPACE}]*)+")
 
 
 def discover() -> Dict[str, Partition]:
@@ -20,7 +22,7 @@ def discover() -> Dict[str, Partition]:
             if output.returncode > 0
             else f"signal: {-output.returncode}"
         )
-        detail = output.stderr.decode("utf-8", errors="replace").strip()
+        detail = output.stderr.decode("utf-8", errors="replace").strip(WHITESPACE)
         raise SlurmAutoError(f"scontrol show node --json failed ({status}): {detail}")
     try:
         source = output.stdout.decode("utf-8")
@@ -55,7 +57,7 @@ def parse_node(value: object) -> Node:
     if not isinstance(value, dict):
         raise SlurmAutoError("expected a node object")
     name = value.get("name")
-    if not isinstance(name, str) or not name.strip():
+    if not isinstance(name, str) or not name.strip(WHITESPACE):
         raise SlurmAutoError("missing or malformed node name")
 
     try:
@@ -110,8 +112,7 @@ def parse_partitions(value: object) -> Tuple[str, ...]:
 
     names = set()
     for item in items:
-        # These separators are control characters that Python also treats as whitespace.
-        name = re.sub(r"^[^\S\x1c-\x1f]+|[^\S\x1c-\x1f]+$", "", item)
+        name = item.strip(WHITESPACE)
         if not name or re.search(r"[\x00-\x1f\x7f-\x9f]", name):
             raise SlurmAutoError("malformed partition membership: empty name or control character")
         names.add(name)
@@ -120,7 +121,7 @@ def parse_partitions(value: object) -> Tuple[str, ...]:
 
 def parse_gres(text: str) -> int:
     """Count configured GPU GRES, including entries with comma-separated annotations."""
-    text = text.strip()
+    text = text.strip(WHITESPACE)
     if not text or text == "(null)":
         return 0
     invalid = SlurmAutoError(
@@ -147,11 +148,11 @@ def parse_gres(text: str) -> int:
 
     total = 0
     for entry in entries:
-        base, separator, annotations = entry.strip().partition("(")
-        if separator and not re.fullmatch(r"(?:\([^()]*\)\s*)+", separator + annotations):
+        base, separator, annotations = entry.strip(WHITESPACE).partition("(")
+        if separator and not GRES_ANNOTATIONS.fullmatch(separator + annotations):
             raise invalid
-        parts = base.strip().split(":")
-        if len(parts) < 2 or any(not part or any(c.isspace() for c in part) for part in parts):
+        parts = base.strip(WHITESPACE).split(":")
+        if len(parts) < 2 or any(not part or any(c in WHITESPACE for c in part) for part in parts):
             raise invalid
         if parts[0] != "gpu":
             continue

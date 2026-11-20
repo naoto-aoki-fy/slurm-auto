@@ -117,6 +117,7 @@ For account, time, job name, and wrap, precedence is explicit CLI options, then
 `submit` accepts `-A`/`--account`, `-t`/`--time`, `-J`/`--job-name`, and `--wrap`
 as overrides. Short and long argument spellings, including attached values, are
 recognized; only the winning value is forwarded for each of these options.
+Attach wrapper option values that begin with a dash, for example `--wrap=-value`.
 Repeated account/time/job-name options in `sbatch_args` use the last value;
 duplicate wraps in the array remain an error. Abbreviated `--account`, `--time`,
 `--job-name`, `--wrap`, and `--gres` options are rejected so they cannot bypass
@@ -199,6 +200,7 @@ Missing, null, or explicitly unset effective CPU values fall back to `cpus`.
 Numeric fields accept unsigned integers and finite Slurm tagged numeric objects
 (`set`, `infinite`, `number`). Malformed effective CPU values are errors.
 Discovery also rejects duplicate JSON object keys and malformed Unicode escapes.
+The top-level response must be an object with a `nodes` array.
 Partition membership accepts a string array or comma-separated string; null or
 empty membership means the node is unassigned and contributes to no partition.
 Nodes in multiple partitions contribute to each. Duplicate node records fail.
@@ -256,7 +258,8 @@ console script responds to `--help`.
 The `src/slurm_auto/` package separates discovery and GRES parsing, models,
 partition and request validation, resource calculation, configuration, command
 rendering, and submission. The CLI uses `argparse`, so help layouts and
-command-line parser diagnostics differ from the Rust version.
+command-line parser diagnostics differ from the Rust version. Validation errors
+can also differ in quoting and process status formatting.
 
 Install the project locally in an isolated environment and run the test suite
 with Python 3.9.
